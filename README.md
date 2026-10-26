@@ -17,19 +17,24 @@ You need Raspberry Pi OS Lite (64-bit, the Trixie-based release or newer) with S
 
 - [moonlight-qt](https://github.com/moonlight-stream/moonlight-docs/wiki/Installing-Moonlight-Qt-on-Raspberry-Pi-4), paired once with Sunshine
 - [xpadneo](https://github.com/atar-axis/xpadneo) for Xbox controllers over Bluetooth
-- an OpenVPN client profile that connects at boot
 
-Then on the Pi:
+Copy your OpenVPN client file to the Pi (for example `scp home.ovpn pi@raspberrypi.local:~`), then on the Pi:
 
 ```sh
 git clone https://github.com/forestlxrd/RPI-Media-Console
 cd RPI-Media-Console
-bash install.sh
+bash install.sh ~/home.ovpn
 nano ~/.config/rpi-console/config.json
 sudo reboot
 ```
 
 `install.sh` installs `cage`, Chromium, Kodi and Kodi's controller support, copies the launcher to `/opt/rpi-console`, drops the Jellyfin repository into Kodi, adds your user to the groups it needs, and enables the service. Logs go to `journalctl -u rpi-console -f`.
+
+## VPN
+
+`vpn.sh` imports the `.ovpn` file into NetworkManager as `home-vpn`, and asks for a username, password or key passphrase if the file needs one. `install.sh` runs it for you when you pass the file; run `bash vpn.sh other.ovpn` later to swap profiles.
+
+The launcher keeps the VPN up whenever home isn't reachable directly: within a minute of the Pi getting online somewhere else, and again after drops. At home it leaves the VPN off. NetworkManager uses the DNS server your VPN pushes, so names like `homeassistant.lan` resolve through the tunnel if the server pushes Pi-hole. If it doesn't, use IP addresses in the config.
 
 ## Config
 
@@ -45,6 +50,7 @@ sudo reboot
 | `moonlight_apps` | `["Steam Big Picture", "Desktop"]` | Sunshine apps you can pick in Settings → Streaming. |
 | `kodi_cmd` | `["kodi", "--standalone"]` | Command for the Movies tile. |
 | `vpn_interface` | `tun0` | Network interface the VPN status reads. |
+| `vpn_connection` | `home-vpn` | NetworkManager profile the launcher brings up away from home. |
 | `github_repo` | `forestlxrd/RPI-Media-Console` | Where updates come from. |
 | `github_token` | | Only needed if the repo goes private. |
 

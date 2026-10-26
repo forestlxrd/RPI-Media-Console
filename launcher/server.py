@@ -47,6 +47,7 @@ DEFAULTS = {
     'bitrate_kbps': 15000,
     'kodi_cmd': ['kodi', '--standalone'],
     'vpn_interface': 'tun0',
+    'vpn_connection': 'home-vpn',  # NetworkManager profile that vpn.sh creates
     'github_repo': 'forestlxrd/RPI-Media-Console',
     'github_token': '',
     'auto_update': True,
@@ -698,6 +699,7 @@ def autopair():
 
 def status_loop():
     ha = urlsplit(cfg['ha_url'])
+    vpn_tried = 0
     while True:
         _, conn, _ = run('nmcli', 'networking', 'connectivity')
         net = {
@@ -708,6 +710,13 @@ def status_loop():
         }
         with lock:
             state['net'], state['pads'] = net, pads_present()
+        # Away from home, keep the VPN up. NetworkManager stops after a failed attempt (server
+        # unreachable, new Wi-Fi), so try again every minute. At home the LAN works directly.
+        online = net['connectivity'] not in (None, 'none')
+        if online and not net['vpn'] and not net['home'] and time.monotonic() - vpn_tried > 60:
+            vpn_tried = time.monotonic()
+            threading.Thread(target=run, args=('nmcli', 'connection', 'up', 'id', cfg['vpn_connection']),
+                             kwargs={'timeout': 60}, daemon=True).start()
         time.sleep(5)
 
 

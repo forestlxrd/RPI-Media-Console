@@ -2,8 +2,10 @@
 # Installs the launcher on Raspberry Pi OS Lite (64-bit). Run it from a clone of this repo,
 # as your normal user:
 #   git clone https://github.com/forestlxrd/RPI-Media-Console && cd RPI-Media-Console && bash install.sh
+# Pass your OpenVPN client file to set up the home VPN too:  bash install.sh ~/home.ovpn
 # After this, the launcher keeps itself up to date from GitHub releases.
 set -euo pipefail
+ovpn=${1:+$(realpath "$1")}
 cd "$(dirname "$0")"
 
 user=$(id -un)
@@ -52,6 +54,10 @@ uri=http://nmcheck.gnome.org/check_network_status.txt
 interval=300
 EOF
 sudo systemctl reload NetworkManager || true
+
+if [ -n "$ovpn" ]; then
+  bash vpn.sh "$ovpn"
+fi
 
 echo "==> Start on boot"
 sed "s/@USER@/$user/" systemd/rpi-console.service | sudo tee /etc/systemd/system/rpi-console.service >/dev/null
