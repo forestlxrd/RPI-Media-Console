@@ -1,0 +1,28 @@
+# Runs the launcher on tty1 with its own login session, so cage, Kodi and Moonlight
+# can take over the screen without a desktop. install.sh fills in @USER@.
+[Unit]
+Description=RPi Media Console launcher
+After=systemd-user-sessions.service plymouth-quit-wait.service dbus.socket systemd-logind.service getty@tty1.service
+Wants=dbus.socket systemd-logind.service
+Conflicts=getty@tty1.service
+ConditionPathExists=/dev/tty0
+
+[Service]
+User=@USER@
+ExecStart=/usr/bin/python3 /opt/rpi-console/current/launcher/server.py
+Environment=PYTHONUNBUFFERED=1 XDG_SESSION_TYPE=wayland
+Restart=always
+RestartSec=3
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+
+[Install]
+WantedBy=graphical.target

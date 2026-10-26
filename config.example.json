@@ -1,0 +1,11 @@
+{
+  "pc_host": "192.168.1.XX",
+  "ha_url": "http://homeassistant.lan:8123",
+  "ha_token": "",
+  "gaming_on_script": "script.gaming_on",
+  "gaming_off_script": "script.gaming_off",
+  "moonlight_apps": [
+    "Steam Big Picture",
+    "Desktop"
+  ]
+}

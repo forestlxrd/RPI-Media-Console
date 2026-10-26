@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forest Home</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="pad.js" defer></script>
+  <script src="osk.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <time id="clock"></time>
+    <div class="chips">
+      <button class="chip chip-update" id="chip-update" data-action="updates" hidden>Update ready</button>
+      <button class="chip" id="chip-home" data-action="wifi"><i class="dot"></i><span></span></button>
+      <button class="chip" id="chip-wifi" data-action="wifi"><span class="bars"></span><span></span></button>
+      <button class="chip" id="chip-pads" data-action="controllers"><span></span></button>
+    </div>
+  </header>
+
+  <main>
+    <section id="home" class="screen" aria-label="Home">
+      <div class="banner" id="banner" hidden>
+        <p></p>
+        <button class="btn" data-action="wifi">Choose a network</button>
+      </div>
+      <nav class="tiles" aria-label="Apps">
+        <button class="tile tile-games" data-action="games" data-hint="A:Start" autofocus>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 7.5h11a4.5 4.5 0 0 1 4.4 5.4l-.7 3.6a2.4 2.4 0 0 1-4.2 1.1L15 15.5H9l-2 2.1a2.4 2.4 0 0 1-4.2-1.1l-.7-3.6a4.5 4.5 0 0 1 4.4-5.4z"/><path d="M7.5 10v3.5M5.75 11.75h3.5"/><circle cx="15.5" cy="10.75" r=".6" fill="currentColor"/><circle cx="17.5" cy="12.75" r=".6" fill="currentColor"/></svg>
+          <span class="tile-name">Games</span>
+          <span class="tile-sub" id="games-sub">Play on Forest PC</span>
+        </button>
+        <button class="tile" data-action="movies" data-hint="A:Open">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.75" y="5" width="18.5" height="14" rx="2.5"/><path d="M10 9.25v5.5l4.75-2.75z"/></svg>
+          <span class="tile-name">Movies</span>
+          <span class="tile-sub">Your Jellyfin library in Kodi</span>
+        </button>
+      </nav>
+      <nav class="more" aria-label="System">
+        <button class="pill" data-action="settings">Settings</button>
+        <button class="pill" data-action="power">Turn off</button>
+      </nav>
+    </section>
+
+    <section id="games" class="screen" aria-live="polite" hidden>
+      <div class="wait">
+        <span class="lantern" aria-hidden="true"></span>
+        <h1 id="games-title">Waking Forest PC</h1>
+        <p id="games-detail">This usually takes about half a minute.</p>
+        <p class="elapsed" id="games-elapsed"></p>
+        <button class="pill" id="games-cancel" data-hint="A:Cancel">Cancel</button>
+      </div>
+    </section>
+
+    <section id="settings" class="screen" hidden>
+      <nav class="side" aria-label="Settings">
+        <h1>Settings</h1>
+        <button data-panel="wifi">Wi-Fi</button>
+        <button data-panel="controllers">Controllers</button>
+        <button data-panel="streaming">Streaming</button>
+        <button data-panel="updates">Updates</button>
+      </nav>
+
+      <div class="panel" id="panel-wifi" hidden>
+        <h2>Wi-Fi</h2>
+        <p class="lede" id="wifi-now"></p>
+        <div class="actions">
+          <button class="btn" id="wifi-rescan">Scan again</button>
+          <button class="btn" id="wifi-hidden">Join a hidden network</button>
+        </div>
+        <ul class="list" id="wifi-list"></ul>
+        <h3>Saved networks</h3>
+        <p class="lede">The Pi joins these on its own when one is in range.</p>
+        <ul class="list" id="wifi-saved"></ul>
+      </div>
+
+      <div class="panel" id="panel-controllers" hidden>
+        <h2>Controllers</h2>
+        <p class="lede">A controller on a USB cable works right away, no pairing needed.</p>
+        <div class="actions"><button class="btn" id="pads-pair">Pair a controller</button></div>
+        <ul class="list" id="pads-list"></ul>
+      </div>
+
+      <div class="panel" id="panel-streaming" hidden>
+        <h2>Streaming</h2>
+        <p class="lede">Used when you pick Games. Press A to change a value.</p>
+        <ul class="list" id="stream-list"></ul>
+      </div>
+
+      <div class="panel" id="panel-updates" hidden>
+        <h2>Updates</h2>
+        <p class="lede">New releases from GitHub install on their own and take over the next time you come back from a game or a movie.</p>
+        <dl class="facts">
+          <dt>This version</dt><dd id="upd-version"></dd>
+          <dt>Newest on GitHub</dt><dd id="upd-latest"></dd>
+        </dl>
+        <div class="actions">
+          <button class="btn" id="upd-check">Check for updates</button>
+          <button class="btn btn-go" id="upd-apply" hidden>Restart and update</button>
+        </div>
+        <ul class="list"><li><button class="row setting" id="upd-auto"><span class="row-name">Install updates automatically</span><strong></strong></button></li></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="hints" id="hints"></footer>
+
+  <svg class="forest" viewBox="0 0 1920 260" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <path class="far" d="M-41 260 -28 225 -35 227 -25 200 -30 201 -20 164 -10 201 -15 200 -5 227 -12 225 1 260ZM3 260 13 233 7 234 16 212 12 214 20 184 29 214 25 212 33 234 27 233 38 260ZM37 260 47 233 42 235 50 213 46 214 54 185 63 214 59 213 67 235 61 233 72 260ZM59 260 72 222 65 224 75 194 70 196 81 155 92 196 87 194 98 224 90 222 103 260ZM84 260 99 223 90 225 103 195 97 197 109 156 122 197 116 195 128 225 119 223 134 260ZM117 260 130 228 123 230 133 205 128 206 138 172 148 206 143 205 153 230 146 228 159 260ZM159 260 174 218 165 221 178 187 172 189 185 144 198 189 192 187 204 221 195 218 211 260ZM214 260 225 233 219 235 228 214 223 215 232 186 241 215 237 214 246 235 239 233 250 260ZM247 260 258 231 252 232 260 209 256 210 265 178 273 210 269 209 278 232 272 231 282 260ZM268 260 286 211 276 214 290 175 283 177 297 125 312 177 305 175 319 214 309 211 327 260ZM309 260 325 216 316 219 329 184 323 186 336 139 350 186 343 184 356 219 347 216 363 260ZM358 260 368 233 362 234 370 213 366 214 374 185 382 214 378 213 386 234 381 233 390 260ZM377 260 393 215 384 218 397 182 391 184 405 136 419 184 412 182 426 218 416 215 433 260ZM411 260 427 218 418 220 431 186 424 189 438 143 451 189 445 186 457 220 448 218 464 260ZM438 260 458 212 447 215 462 176 454 179 470 126 486 179 479 176 494 215 483 212 502 260ZM475 260 491 218 482 221 495 187 488 189 502 144 515 189 509 187 521 221 512 218 528 260ZM518 260 536 214 526 216 540 179 533 182 547 132 561 182 554 179 568 216 558 214 575 260ZM576 260 587 231 581 233 590 210 585 212 594 181 603 212 599 210 608 233 602 231 612 260ZM618 260 630 230 623 232 632 208 628 210 637 178 647 210 642 208 651 232 645 230 656 260ZM634 260 652 216 642 218 656 182 649 185 664 137 679 185 672 182 686 218 676 216 694 260ZM671 260 690 210 680 212 694 172 687 175 703 120 718 175 711 172 726 212 715 210 734 260ZM716 260 733 218 724 220 737 186 730 188 744 142 758 188 751 186 764 220 755 218 771 260ZM746 260 766 211 755 213 771 174 763 176 780 123 797 176 789 174 805 213 794 211 814 260ZM790 260 806 216 797 218 810 182 803 185 816 137 829 185 823 182 836 218 827 216 843 260ZM827 260 846 216 835 219 850 183 843 186 858 138 873 186 866 183 880 219 870 216 888 260ZM881 260 894 227 886 228 896 202 891 203 902 167 912 203 907 202 917 228 910 227 923 260ZM926 260 936 234 930 236 938 215 934 216 943 188 951 216 947 215 955 236 949 234 959 260ZM955 260 966 231 960 233 968 210 964 212 972 181 981 212 977 210 985 233 979 231 989 260ZM998 260 1008 231 1002 233 1011 209 1006 211 1015 180 1024 211 1020 209 1028 233 1022 231 1033 260ZM1020 260 1038 210 1028 212 1042 172 1035 175 1050 120 1065 175 1058 172 1072 212 1062 210 1080 260ZM1058 260 1074 219 1065 221 1078 188 1072 190 1086 146 1100 190 1093 188 1106 221 1097 219 1114 260ZM1099 260 1117 210 1107 213 1122 172 1114 175 1130 121 1145 175 1138 172 1152 213 1142 210 1160 260ZM1141 260 1155 224 1147 226 1159 198 1153 200 1165 161 1177 200 1171 198 1183 226 1175 224 1189 260ZM1194 260 1205 230 1199 232 1207 208 1203 210 1212 178 1221 210 1217 208 1225 232 1219 230 1230 260ZM1223 260 1235 228 1228 230 1238 204 1233 206 1243 171 1253 206 1248 204 1258 230 1251 228 1263 260ZM1263 260 1274 227 1268 229 1277 203 1272 204 1282 169 1292 204 1287 203 1296 229 1290 227 1301 260ZM1294 260 1308 224 1300 226 1311 197 1306 199 1317 160 1329 199 1323 197 1334 226 1326 224 1340 260ZM1335 260 1353 215 1343 217 1357 181 1350 184 1364 135 1379 184 1372 181 1386 217 1376 215 1393 260ZM1377 260 1393 215 1384 218 1397 182 1391 184 1404 136 1417 184 1411 182 1423 218 1414 215 1430 260ZM1417 260 1437 212 1426 215 1441 177 1433 179 1450 128 1466 179 1458 177 1474 215 1462 212 1482 260ZM1470 260 1484 223 1476 226 1487 196 1482 198 1493 159 1505 198 1499 196 1510 226 1502 223 1516 260ZM1496 260 1511 217 1502 219 1515 184 1509 186 1521 139 1534 186 1528 184 1540 219 1532 217 1547 260ZM1530 260 1541 229 1535 231 1544 205 1539 207 1549 173 1558 207 1554 205 1563 231 1556 229 1568 260ZM1567 260 1576 233 1571 235 1578 213 1575 215 1582 186 1590 215 1586 213 1594 235 1589 233 1598 260ZM1594 260 1605 232 1599 233 1607 211 1603 212 1612 182 1620 212 1616 211 1625 233 1619 232 1629 260ZM1605 260 1625 210 1614 212 1630 172 1622 175 1638 120 1655 175 1647 172 1662 212 1651 210 1671 260ZM1647 260 1659 228 1653 229 1662 203 1657 205 1667 170 1678 205 1673 203 1682 229 1676 228 1688 260ZM1682 260 1694 231 1687 233 1696 210 1692 211 1701 180 1711 211 1707 210 1716 233 1709 231 1721 260ZM1725 260 1739 221 1731 224 1743 192 1737 195 1749 153 1762 195 1756 192 1768 224 1759 221 1774 260ZM1760 260 1770 232 1764 233 1773 211 1768 212 1777 182 1786 212 1782 211 1790 233 1784 232 1795 260ZM1780 260 1797 211 1787 214 1801 174 1794 177 1809 124 1824 177 1817 174 1831 214 1821 211 1839 260ZM1802 260 1822 207 1811 210 1827 168 1819 171 1836 114 1852 171 1844 168 1861 210 1849 207 1869 260ZM1841 260 1855 219 1847 221 1859 189 1853 191 1865 147 1877 191 1871 189 1882 221 1874 219 1889 260ZM1866 260 1888 207 1876 210 1893 167 1884 170 1902 112 1921 170 1912 167 1929 210 1917 207 1939 260ZM1923 260 1936 227 1929 229 1938 203 1934 205 1944 169 1954 205 1949 203 1959 229 1952 227 1964 260ZM0 242H1920V260H0Z"/>
+    <path class="near" d="M-51 260 -33 211 -43 214 -28 175 -36 178 -20 125 -4 178 -12 175 3 214 -7 211 11 260ZM18 260 43 198 29 201 48 151 39 154 59 87 79 154 70 151 89 201 75 198 100 260ZM91 260 107 220 98 222 111 190 105 192 118 149 132 192 125 190 138 222 129 220 145 260ZM157 260 177 212 165 214 181 175 173 178 190 125 207 178 199 175 215 214 204 212 224 260ZM230 260 258 189 242 193 264 135 253 139 276 62 298 139 288 135 309 193 294 189 321 260ZM343 260 360 215 350 217 365 181 357 183 372 134 387 183 380 181 394 217 384 215 402 260ZM444 260 468 201 454 204 473 156 464 159 484 95 503 159 494 156 513 204 500 201 523 260ZM554 260 571 218 562 220 575 186 568 189 582 143 596 189 590 186 603 220 594 218 610 260ZM646 260 664 209 654 212 668 171 661 174 676 118 691 174 684 171 698 212 688 209 706 260ZM749 260 772 203 759 206 777 159 768 163 787 100 806 163 797 159 815 206 802 203 825 260ZM853 260 881 193 865 197 887 143 876 147 899 75 922 147 911 143 933 197 917 193 945 260ZM936 260 962 190 947 194 968 138 958 142 980 66 1002 142 991 138 1013 194 997 190 1024 260ZM1052 260 1078 187 1064 191 1084 133 1074 137 1096 58 1117 137 1107 133 1128 191 1113 187 1139 260ZM1126 260 1146 212 1135 215 1151 176 1143 179 1159 127 1176 179 1168 176 1184 215 1173 212 1192 260ZM1204 260 1227 197 1214 200 1233 149 1223 153 1243 84 1262 153 1253 149 1272 200 1258 197 1282 260ZM1297 260 1317 206 1306 209 1322 165 1314 168 1331 109 1348 168 1340 165 1356 209 1344 206 1365 260ZM1382 260 1407 198 1393 202 1413 152 1403 155 1424 89 1445 155 1435 152 1455 202 1441 198 1466 260ZM1583 260 1614 183 1596 187 1621 125 1608 129 1634 46 1659 129 1647 125 1671 187 1654 183 1685 260ZM1650 260 1679 188 1663 192 1686 134 1675 138 1699 60 1724 138 1712 134 1736 192 1719 188 1749 260ZM1773 260 1797 199 1783 202 1803 153 1793 156 1813 90 1833 156 1824 153 1843 202 1829 199 1854 260ZM1836 260 1864 189 1848 193 1870 136 1859 140 1882 63 1905 140 1894 136 1916 193 1900 189 1928 260ZM1927 260 1944 218 1934 220 1948 187 1941 189 1955 143 1970 189 1963 187 1977 220 1967 218 1984 260ZM0 252H1920V260H0ZM1452 260V214L1490 182L1528 214V260Z"/>
+    <g class="window"><rect x="1500" y="224" width="14" height="12" rx="1"/></g>
+  </svg>
+
+  <dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
+    <form method="dialog">
+      <h2 id="dlg-confirm-title"></h2>
+      <p class="dlg-body"></p>
+      <div class="actions">
+        <button class="btn btn-go" value="ok"></button>
+        <button class="btn" value="cancel" autofocus>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-text" aria-labelledby="dlg-text-title">
+    <form method="dialog">
+      <h2 id="dlg-text-title"></h2>
+      <p class="dlg-body"></p>
+      <input name="value" autocomplete="off" autocapitalize="off" spellcheck="false" aria-labelledby="dlg-text-title">
+      <div class="actions">
+        <button class="btn btn-go" value="ok"></button>
+        <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-power" aria-labelledby="dlg-power-title">
+    <form method="dialog">
+      <h2 id="dlg-power-title">Turn off the Pi?</h2>
+      <p class="dlg-body">To start it again, unplug the power cable and plug it back in.</p>
+      <div class="actions">
+        <button class="btn btn-go" value="poweroff">Turn off</button>
+        <button class="btn" value="reboot">Restart</button>
+        <button class="btn" value="cancel" autofocus>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-pair" aria-labelledby="dlg-pair-title">
+    <form method="dialog">
+      <h2 id="dlg-pair-title">Looking for a controller</h2>
+      <p class="dlg-body">Turn the controller on, then hold the small pair button on top until the Xbox logo flashes fast.</p>
+      <span class="lantern small" aria-hidden="true"></span>
+      <div class="actions"><button class="btn" value="cancel" autofocus>Stop looking</button></div>
+    </form>
+  </dialog>
+
+  <output id="toast" popover="manual"></output>
+</body>
+</html>
