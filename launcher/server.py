@@ -9,7 +9,9 @@ import json
 import os
 import queue
 import re
+import select
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -293,12 +295,127 @@ class Display:
 display = Display()
 
 
+GUIDE_HOLD = 5          # seconds the Xbox button is held to close Kodi or Moonlight
+EV_KEY, BTN_MODE = 1, 0x13C  # BTN_MODE is the Xbox button
+INPUT_EVENT = struct.Struct('llHHi')  # struct input_event: timeval, type, code, value
+
+
+def hdmi_audio_card(drm='/sys/class/drm'):
+    """ALSA card of the HDMI port with a screen on it (vc4hdmi0 is the port next to USB-C)."""
+    for connector, card in (('HDMI-A-1', 'vc4hdmi0'), ('HDMI-A-2', 'vc4hdmi1')):
+        for status in glob(f'{drm}/card*-{connector}/status'):
+            try:
+                if Path(status).read_text().strip() == 'connected':
+                    return card
+            except OSError:
+                pass
+    return None
+
+
+def app_env():
+    env = dict(os.environ)
+    card = hdmi_audio_card()
+    if card:
+        env['ALSA_CARD'] = card  # the default ALSA device follows the TV
+    return env
+
+
+def watch_guide_hold(stop, on_hold, devices='/dev/input/event*', hold=GUIDE_HOLD):
+    """Call on_hold() once any controller's Xbox button has been held for `hold` seconds.
+    Needs xpadneo's shift mode off (install.sh does that), or the press only arrives on release."""
+    fds, pressed = {}, {}
+    try:
+        while not stop.is_set():
+            for path in glob(devices):
+                if path not in fds:
+                    try:
+                        fds[path] = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                    except OSError:
+                        fds[path] = None  # unreadable (a keyboard we have no rights to, say)
+            ready, _, _ = select.select([fd for fd in fds.values() if fd is not None], [], [], 0.25)
+            for path, fd in list(fds.items()):
+                if fd not in ready:
+                    continue
+                try:
+                    data = os.read(fd, INPUT_EVENT.size * 64)
+                except BlockingIOError:
+                    continue
+                except OSError:  # controller switched off or out of range
+                    os.close(fd)
+                    del fds[path]
+                    pressed.pop(path, None)
+                    continue
+                for off in range(0, len(data) - INPUT_EVENT.size + 1, INPUT_EVENT.size):
+                    _, _, kind, code, value = INPUT_EVENT.unpack_from(data, off)
+                    if kind == EV_KEY and code == BTN_MODE:
+                        if value:
+                            pressed.setdefault(path, time.monotonic())
+                        else:
+                            pressed.pop(path, None)
+            if any(time.monotonic() - t >= hold for t in pressed.values()):
+                return on_hold()
+    finally:
+        for fd in fds.values():
+            if fd is not None:
+                os.close(fd)
+
+
+def process_tree(pid):
+    """pid and every process it started, read from /proc."""
+    children = {}
+    for stat in glob('/proc/[0-9]*/stat'):
+        try:
+            ppid = int(Path(stat).read_text().rsplit(')', 1)[1].split()[1])
+            children.setdefault(ppid, []).append(int(stat.split('/')[2]))
+        except (OSError, IndexError, ValueError):
+            pass  # the process ended while we looked
+    tree, todo = [], [pid]
+    while todo:
+        tree.append(todo.pop())
+        todo += children.get(tree[-1], [])
+    return tree
+
+
+def close_app(proc, grace=5):
+    """End an app and everything it started (Kodi runs as a wrapper script plus kodi.bin):
+    SIGTERM so it can save its state, then SIGKILL whatever is still there after `grace` seconds."""
+    pids = process_tree(proc.pid)
+    log('closing', proc.args[0], pids)
+
+    def send(sig):
+        alive = []
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+                alive.append(pid)
+            except ProcessLookupError:
+                pass
+        return alive
+
+    send(signal.SIGTERM)
+    end = time.monotonic() + grace
+    while time.monotonic() < end and send(0):
+        time.sleep(0.2)
+    send(signal.SIGKILL)
+
+
+def run_fullscreen(cmd):
+    """Run Kodi or Moonlight until it exits or the Xbox button is held for GUIDE_HOLD seconds."""
+    proc = subprocess.Popen(cmd, env=app_env())
+    stop = threading.Event()
+    threading.Thread(target=watch_guide_hold, args=(stop, lambda: close_app(proc)), daemon=True).start()
+    try:
+        return proc.wait()
+    finally:
+        stop.set()
+
+
 def run_app(name, cmd, helper=None):
     set_activity(name, 'running')
     if helper:
         threading.Thread(target=helper, daemon=True).start()
     try:
-        subprocess.run(cmd)
+        run_fullscreen(cmd)
     except OSError as e:
         notify(f"Couldn't start {cmd[0]}: {e.strerror}")
     finally:
@@ -347,7 +464,8 @@ def games_wake():
 def stream():
     set_activity('games', 'streaming')
     try:
-        subprocess.run(['moonlight', 'stream', cfg['pc_host'], cfg['moonlight_app'],
+        moonlight = shutil.which('moonlight-qt') or 'moonlight'  # Pi OS names it moonlight-qt
+        run_fullscreen([moonlight, 'stream', cfg['pc_host'], cfg['moonlight_app'],
                         '--resolution', cfg['resolution'], '--fps', '60',
                         '--bitrate', str(cfg['bitrate_kbps']), '--display-mode', 'fullscreen'])
     except OSError:
@@ -631,7 +749,7 @@ def pair_controller(timeout, stop):
         return None
 
     try:
-        for cmd in ('agent NoInputNoOutput', 'default-agent', 'scan on'):
+        for cmd in ('power on', 'agent NoInputNoOutput', 'default-agent', 'scan on'):
             send(cmd)
         end = time.monotonic() + timeout
         while time.monotonic() < end and not stop():

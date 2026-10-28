@@ -7,7 +7,9 @@ A controller-driven launcher for a Raspberry Pi 4 on a TV. Pick **Games** to wak
 - `launcher/server.py` runs as a systemd service on tty1. It serves the launcher page on `localhost:8787` and keeps one thing on screen at a time: Chromium in a `cage` kiosk, or Moonlight, or Kodi. When Moonlight or Kodi exits, the launcher comes back.
 - `launcher/web/` holds the launcher page. The controller drives it through the Gamepad API, and text fields (Wi-Fi passwords) get an Xbox-style on-screen keyboard.
 - **Games** asks Home Assistant to run `script.gaming_on`, waits for Sunshine to answer on port 47989, then starts Moonlight. When the stream ends it runs `script.gaming_off`, and Home Assistant decides whether the PC goes back to sleep.
-- **Movies** opens Kodi. The first time, the launcher installs the Jellyfin add-on in Kodi for you; the add-on then asks once for your server address and login. After that, your Jellyfin movies and shows sit in Kodi's own Movies and TV shows menus. Quit Kodi from its power menu to get back to the launcher.
+- **Movies** opens Kodi. The first time, the launcher installs the Jellyfin add-on in Kodi for you; the add-on then asks once for your server address and login. After that, your Jellyfin movies and shows sit in Kodi's own Movies and TV shows menus.
+- **Getting back:** hold the Xbox button for 5 seconds in Kodi or Moonlight. The launcher closes that app, along with anything it started, and comes back. Moonlight's own combo (Menu + View + LB + RB) ends a stream too.
+- **Sound** goes to whichever HDMI port has the TV on it. The launcher checks before starting Kodi or Moonlight, so leave Kodi's audio output on Default.
 
 The server uses only the Python standard library.
 
@@ -87,8 +89,9 @@ You can turn automatic updates off in Settings → Updates.
 | Menu | | Done (Enter) |
 | View | | Show the password |
 | Xbox button, or View + Menu | Home | |
+| Hold the Xbox button 5 s | Closes Kodi or Moonlight and returns here | |
 
-Kodi uses its own controller mapping: A selects, B goes back, and you can remap buttons under Settings → System → Input.
+Kodi uses its own controller mapping. If it ignores the controller, set it up once under Settings → System → Input → Configure attached controllers (a mouse helps the first time).
 
 If the Pi boots with no controller connected, it looks for one to pair for two minutes. A controller on a USB cable works without pairing.
 

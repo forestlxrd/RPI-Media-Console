@@ -47,6 +47,14 @@ for g in input video render netdev bluetooth; do
   getent group "$g" >/dev/null && sudo usermod -aG "$g" "$user"
 done
 
+echo "==> Bluetooth on (Raspberry Pi OS can start with it switched off)"
+sudo rfkill unblock bluetooth || true
+
+echo "==> Xbox button reports presses right away, so holding it closes Kodi or Moonlight"
+# xpadneo normally holds the press back until release (for its profile switching).
+echo "options hid_xpadneo disable_shift_mode=1" | sudo tee /etc/modprobe.d/rpi-console-xpadneo.conf >/dev/null
+echo 1 | sudo tee /sys/module/hid_xpadneo/parameters/disable_shift_mode >/dev/null 2>&1 || true
+
 echo "==> Captive portal detection (hotel and cafe Wi-Fi sign-in pages)"
 sudo tee /etc/NetworkManager/conf.d/20-connectivity.conf >/dev/null <<'EOF'
 [connectivity]
