@@ -92,6 +92,31 @@ def test_guide_hold():
         os.close(w)
 
 
+def test_kms_device():
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / 'card0').mkdir()  # the Pi 4's 3D-only GPU has no connectors
+        (Path(d) / 'card1-HDMI-A-1').mkdir()
+        (Path(d) / 'card1-HDMI-A-2').mkdir()
+        assert server.kms_device(d) == '/dev/dri/card1'
+        assert server.kms_device(d + '/nothing') is None
+
+
+def gone(pid):
+    stat = server.proc_stat(pid)
+    return stat is None or stat[0] == 'Z'
+
+
+def test_run_fullscreen_leaves_nothing():
+    """A wrapper that exits first must not leave its child running (that child would keep the screen)."""
+    marker = f'sleep {60 + os.getpid() % 7}.123'  # a command line we can find again
+    started = time.monotonic()
+    server.run_fullscreen(['sh', '-c', f'{marker} & sleep 1.5'])
+    orphans = [pid for pid in os.listdir('/proc') if pid.isdigit() and not gone(int(pid))
+               and marker.encode() in Path(f'/proc/{pid}/cmdline').read_bytes().replace(b'\0', b' ')]
+    assert not orphans, f'left running: {orphans}'
+    assert time.monotonic() - started < 10
+
+
 def test_close_app_leaves_nothing():
     """Kodi starts as a wrapper script plus kodi.bin; closing must end both, even one that ignores SIGTERM."""
     proc = subprocess.Popen(['sh', '-c', 'trap "" TERM; sleep 60 & sleep 60'])
@@ -102,8 +127,7 @@ def test_close_app_leaves_nothing():
     proc.wait(5)
     time.sleep(1.5)
     for pid in pids:
-        state = Path(f'/proc/{pid}/stat')
-        assert not state.exists() or state.read_text().split(') ')[1][0] == 'Z', f'{pid} still running'
+        assert gone(pid), f'{pid} still running'
 
 
 if __name__ == '__main__':
@@ -111,5 +135,7 @@ if __name__ == '__main__':
     test_install_release()
     test_hdmi_audio_card()
     test_guide_hold()
+    test_kms_device()
     test_close_app_leaves_nothing()
+    test_run_fullscreen_leaves_nothing()
     print('ok')

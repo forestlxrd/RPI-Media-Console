@@ -7,8 +7,10 @@ A controller-driven launcher for a Raspberry Pi 4 on a TV. Pick **Games** to wak
 - `launcher/server.py` runs as a systemd service on tty1. It serves the launcher page on `localhost:8787` and keeps one thing on screen at a time: Chromium in a `cage` kiosk, or Moonlight, or Kodi. When Moonlight or Kodi exits, the launcher comes back.
 - `launcher/web/` holds the launcher page. The controller drives it through the Gamepad API, and text fields (Wi-Fi passwords) get an Xbox-style on-screen keyboard.
 - **Games** asks Home Assistant to run `script.gaming_on`, waits for Sunshine to answer on port 47989, then starts Moonlight. When the stream ends it runs `script.gaming_off`, and Home Assistant decides whether the PC goes back to sleep.
-- **Movies** opens Kodi. The first time, the launcher installs the Jellyfin add-on in Kodi for you; the add-on then asks once for your server address and login. After that, your Jellyfin movies and shows sit in Kodi's own Movies and TV shows menus.
-- **Getting back:** hold the Xbox button for 5 seconds in Kodi or Moonlight. The launcher closes that app, along with anything it started, and comes back. Moonlight's own combo (Menu + View + LB + RB) ends a stream too.
+- **Movies** opens Jellyfin's own TV app full screen in a separate browser window. Settings → Playback switches it to Kodi instead. Kodi plays more video formats on the Pi's hardware; the browser leaves x265/HEVC files for your server to convert.
+  - The first time, use a mouse to set Jellyfin's Settings → Display → Display mode to **TV** and turn on Settings → Controls → **Enable gamepad**. Jellyfin keeps both in that browser only.
+  - With Kodi, the first launch installs the Jellyfin add-on for you; the add-on then asks once for your server address and login, and your library shows up in Kodi's Movies and TV shows menus.
+- **Getting back:** hold the Xbox button for 5 seconds in Jellyfin, Kodi or Moonlight. The launcher closes that app, along with anything it started, and comes back. Moonlight's own combo (Menu + View + LB + RB) ends a stream too.
 - **Sound** goes to whichever HDMI port has the TV on it. The launcher checks before starting Kodi or Moonlight, so leave Kodi's audio output on Default.
 
 The server uses only the Python standard library.
@@ -50,13 +52,15 @@ The launcher keeps the VPN up whenever home isn't reachable directly: within a m
 | `ha_token` | | Long-lived token from a non-admin Home Assistant user. Leave it empty to skip waking the PC. |
 | `gaming_on_script`, `gaming_off_script` | `script.gaming_on`, `script.gaming_off` | Scripts Games runs before and after a session. |
 | `moonlight_apps` | `["Steam Big Picture", "Desktop"]` | Sunshine apps you can pick in Settings → Streaming. |
-| `kodi_cmd` | `["kodi", "--standalone"]` | Command for the Movies tile. |
+| `movies_app` | `jellyfin` | What the Movies tile opens: `jellyfin` or `kodi`. Also in Settings → Playback. |
+| `jellyfin_url` | `http://jelly.lan` | Jellyfin's address. |
+| `kodi_cmd` | `["kodi", "--standalone"]` | How Movies starts Kodi. |
 | `vpn_interface` | `tun0` | Network interface the VPN status reads. |
 | `vpn_connection` | `home-vpn` | NetworkManager profile the launcher brings up away from home. |
 | `github_repo` | `forestlxrd/RPI-Media-Console` | Where updates come from. |
 | `github_token` | | Only needed if the repo goes private. |
 
-Settings → Streaming changes `moonlight_app`, `resolution` and `bitrate_kbps` from the couch.
+Settings → Playback changes `movies_app`, `moonlight_app`, `resolution` and `bitrate_kbps` from the couch.
 
 ## Updates
 
@@ -89,7 +93,7 @@ You can turn automatic updates off in Settings → Updates.
 | Menu | | Done (Enter) |
 | View | | Show the password |
 | Xbox button, or View + Menu | Home | |
-| Hold the Xbox button 5 s | Closes Kodi or Moonlight and returns here | |
+| Hold the Xbox button 5 s | Closes Jellyfin, Kodi or Moonlight and returns here | |
 
 Kodi uses its own controller mapping. If it ignores the controller, set it up once under Settings → System → Input → Configure attached controllers (a mouse helps the first time).
 

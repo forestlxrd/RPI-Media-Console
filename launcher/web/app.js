@@ -99,7 +99,7 @@ const actions = {
     api('launch', { app: 'games' }).catch((e) => { show('home', lastHomeFocus); fail(e); });
   },
   movies() {
-    toast('Opening Kodi…');
+    toast(state.settings?.movies_app === 'kodi' ? 'Opening Kodi…' : 'Opening Jellyfin…');
     api('launch', { app: 'movies' }).catch(fail);
   },
   settings: () => openSettings('wifi'),
@@ -279,9 +279,10 @@ async function forgetPad(c) {
 $('#pads-pair').onclick = () => api('controllers/pair', {}).then(poll).catch(fail);
 
 const STREAM_OPTIONS = {
-  moonlight_app: { label: 'Start on the PC', values: () => state.settings.moonlight_apps, show: (v) => v },
-  resolution: { label: 'Picture', values: () => ['1280x720', '1920x1080'], show: (v) => ({ '1280x720': '720p', '1920x1080': '1080p' })[v] ?? v },
-  bitrate_kbps: { label: 'Bitrate (lower it if the picture stutters)', values: () => [8000, 10000, 15000, 20000, 30000], show: (v) => `${v / 1000} Mbps` },
+  movies_app: { label: 'Movies open in', values: () => ['jellyfin', 'kodi'], show: (v) => ({ jellyfin: 'Jellyfin', kodi: 'Kodi' })[v] ?? v },
+  moonlight_app: { label: 'Games start in', values: () => state.settings.moonlight_apps, show: (v) => v },
+  resolution: { label: 'Game picture', values: () => ['1280x720', '1920x1080'], show: (v) => ({ '1280x720': '720p', '1920x1080': '1080p' })[v] ?? v },
+  bitrate_kbps: { label: 'Game bitrate (lower it if games stutter)', values: () => [8000, 10000, 15000, 20000, 30000], show: (v) => `${v / 1000} Mbps` },
 };
 
 function renderStreaming() {

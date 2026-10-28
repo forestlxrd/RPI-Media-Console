@@ -5,6 +5,7 @@ Serves the launcher page on localhost, keeps exactly one full-screen thing on th
 display (the kiosk browser, Moonlight or Kodi), and installs new GitHub releases.
 Stdlib only, so a fresh Raspberry Pi OS needs nothing from pip.
 """
+import contextlib
 import json
 import os
 import queue
@@ -47,6 +48,8 @@ DEFAULTS = {
     'moonlight_apps': ['Steam Big Picture', 'Desktop'],
     'resolution': '1920x1080',
     'bitrate_kbps': 15000,
+    'movies_app': 'jellyfin',  # 'jellyfin' (its own TV app, in the browser) or 'kodi'
+    'jellyfin_url': 'http://jelly.lan',
     'kodi_cmd': ['kodi', '--standalone'],
     'vpn_interface': 'tun0',
     'vpn_connection': 'home-vpn',  # NetworkManager profile that vpn.sh creates
@@ -54,7 +57,7 @@ DEFAULTS = {
     'github_token': '',
     'auto_update': True,
 }
-EDITABLE = {'moonlight_app': str, 'resolution': str, 'bitrate_kbps': int, 'auto_update': bool}
+EDITABLE = {'movies_app': str, 'moonlight_app': str, 'resolution': str, 'bitrate_kbps': int, 'auto_update': bool}
 PUBLIC = [*EDITABLE, 'moonlight_apps', 'pc_name']
 
 
@@ -249,24 +252,13 @@ class Display:
         self.jobs = queue.Queue()
         self.kiosk = None
 
-    def kiosk_cmd(self):
-        browser = shutil.which('chromium') or shutil.which('chromium-browser')
-        return [
-            'cage', '-d', '--', browser, HOME_URL,
-            '--kiosk', '--no-first-run', '--noerrdialogs', '--disable-infobars',
-            '--disable-session-crashed-bubble', '--password-store=basic', '--ozone-platform=wayland',
-            '--check-for-update-interval=31536000',
-            f'--user-data-dir={Path.home() / ".local/share/rpi-console/chromium"}',
-            '--disable-features=Translate',
-        ]
-
     def run(self):
         if not shutil.which('cage'):  # dev machine: open http://localhost:8787 yourself
             log('cage not found, not starting the kiosk; open', HOME_URL)
             while True:
                 self.jobs.get()()
         while True:
-            self.kiosk = subprocess.Popen(self.kiosk_cmd())
+            self.kiosk = subprocess.Popen(browser_cmd(HOME_URL, 'chromium'), env=app_env())
             job = None
             while job is None and self.kiosk.poll() is None:
                 try:
@@ -284,12 +276,29 @@ class Display:
 
     def stop_kiosk(self):
         if self.kiosk and self.kiosk.poll() is None:
-            self.kiosk.terminate()
-            try:
-                self.kiosk.wait(10)
-            except subprocess.TimeoutExpired:
-                self.kiosk.kill()
-                self.kiosk.wait()
+            end_processes(process_tree(self.kiosk.pid))  # cage and every Chromium process under it
+            self.kiosk.wait()
+
+
+def browser_cmd(url, profile, *extra):
+    """Chromium full screen in cage, the launcher's way of showing one web page on the TV."""
+    browser = shutil.which('chromium') or shutil.which('chromium-browser')
+    return [
+        'cage', '-d', '--', browser, url,
+        '--kiosk', '--no-first-run', '--noerrdialogs', '--disable-infobars',
+        '--disable-session-crashed-bubble', '--password-store=basic', '--ozone-platform=wayland',
+        '--check-for-update-interval=31536000',
+        f'--user-data-dir={Path.home() / ".local/share/rpi-console" / profile}',
+        '--disable-features=Translate', *extra,
+    ]
+
+
+def jellyfin_cmd():
+    site = urlsplit(cfg['jellyfin_url'])
+    return browser_cmd(cfg['jellyfin_url'], 'jellyfin',
+                       # The Gamepad API only works on secure pages, and Jellyfin is plain http on the LAN.
+                       f'--unsafely-treat-insecure-origin-as-secure={site.scheme}://{site.netloc}',
+                       '--autoplay-policy=no-user-gesture-required')
 
 
 display = Display()
@@ -312,11 +321,21 @@ def hdmi_audio_card(drm='/sys/class/drm'):
     return None
 
 
+def kms_device(drm='/sys/class/drm'):
+    """/dev/dri/cardN that drives the HDMI ports. On a Pi 4 the other card is the 3D-only GPU,
+    and cage started on that one runs happily with no screen at all."""
+    for path in sorted(glob(f'{drm}/card*-HDMI-A-*')):
+        return '/dev/dri/' + Path(path).name.split('-', 1)[0]
+    return None
+
+
 def app_env():
     env = dict(os.environ)
-    card = hdmi_audio_card()
+    card, gpu = hdmi_audio_card(), kms_device()
     if card:
         env['ALSA_CARD'] = card  # the default ALSA device follows the TV
+    if gpu:
+        env['WLR_DRM_DEVICES'] = gpu  # cage fails, and gets retried, rather than run screenless
     return env
 
 
@@ -360,54 +379,103 @@ def watch_guide_hold(stop, on_hold, devices='/dev/input/event*', hold=GUIDE_HOLD
                 os.close(fd)
 
 
-def process_tree(pid):
-    """pid and every process it started, read from /proc."""
-    children = {}
-    for stat in glob('/proc/[0-9]*/stat'):
-        try:
-            ppid = int(Path(stat).read_text().rsplit(')', 1)[1].split()[1])
-            children.setdefault(ppid, []).append(int(stat.split('/')[2]))
-        except (OSError, IndexError, ValueError):
-            pass  # the process ended while we looked
-    tree, todo = [], [pid]
+def proc_stat(pid):
+    """(state, parent pid, start time) of a process, or None once it is gone."""
+    try:
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+        return fields[0], int(fields[1]), int(fields[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def process_tree(root):
+    """root and every process under it, as {pid: start time}. The start time tells a
+    process apart from a later one that reuses its pid."""
+    stats, children = {}, {}
+    for path in glob('/proc/[0-9]*/stat'):
+        pid = int(path.split('/')[2])
+        stat = proc_stat(pid)
+        if stat:
+            stats[pid] = stat
+            children.setdefault(stat[1], []).append(pid)
+    tree, todo = {}, [root]
     while todo:
-        tree.append(todo.pop())
-        todo += children.get(tree[-1], [])
+        pid = todo.pop()
+        if pid in stats and pid not in tree:
+            tree[pid] = stats[pid][2]
+            todo += children.get(pid, [])
     return tree
 
 
-def close_app(proc, grace=5):
-    """End an app and everything it started (Kodi runs as a wrapper script plus kodi.bin):
-    SIGTERM so it can save its state, then SIGKILL whatever is still there after `grace` seconds."""
-    pids = process_tree(proc.pid)
-    log('closing', proc.args[0], pids)
+def end_processes(family, grace=5):
+    """SIGTERM the processes in {pid: start time} that still run, so they can save their state,
+    SIGKILL whatever is left after `grace` seconds, and return once all are gone."""
+    def running():
+        out = []
+        for pid, started in family.items():
+            stat = proc_stat(pid)
+            if stat and stat[2] == started and stat[0] != 'Z':
+                out.append(pid)
+        return out
 
-    def send(sig):
-        alive = []
-        for pid in pids:
-            try:
+    if not running():
+        return
+    log('closing', running())
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 3)):
+        for pid in running():
+            with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, sig)
-                alive.append(pid)
-            except ProcessLookupError:
-                pass
-        return alive
+        end = time.monotonic() + wait
+        while running() and time.monotonic() < end:
+            time.sleep(0.2)
+        if not running():
+            return
 
-    send(signal.SIGTERM)
-    end = time.monotonic() + grace
-    while time.monotonic() < end and send(0):
-        time.sleep(0.2)
-    send(signal.SIGKILL)
+
+def close_app(proc, grace=5):
+    """End an app and everything it started (Kodi is a wrapper script plus kodi.bin)."""
+    end_processes(process_tree(proc.pid), grace)
+
+
+on_screen = {}  # processes of the app on the TV now, so a shutdown can take them along
+on_screen_lock = threading.Lock()
+
+
+def seen(pid=None):
+    """Add pid's process tree to on_screen, and return a copy of it."""
+    with on_screen_lock:
+        if pid:
+            on_screen.update(process_tree(pid))
+        return dict(on_screen)
 
 
 def run_fullscreen(cmd):
-    """Run Kodi or Moonlight until it exits or the Xbox button is held for GUIDE_HOLD seconds."""
+    """Run Kodi, Moonlight or Jellyfin until it exits or the Xbox button is held for GUIDE_HOLD
+    seconds. Returns only after every process it started has ended, because anything left
+    holds on to the screen and the launcher can't come back."""
     proc = subprocess.Popen(cmd, env=app_env())
     stop = threading.Event()
-    threading.Thread(target=watch_guide_hold, args=(stop, lambda: close_app(proc)), daemon=True).start()
+    with on_screen_lock:
+        on_screen.clear()
+    seen(proc.pid)
+
+    def remember():  # keep track of children too, since they outlive a wrapper that dies first
+        while not stop.wait(1):
+            seen(proc.pid)
+
+    rememberer = threading.Thread(target=remember, daemon=True)
+    rememberer.start()
+    watcher = threading.Thread(target=watch_guide_hold, args=(stop, lambda: end_processes(seen(proc.pid))), daemon=True)
+    watcher.start()
     try:
         return proc.wait()
     finally:
         stop.set()
+        watcher.join()  # a hold may still be closing things
+        rememberer.join()
+        end_processes(seen())  # whatever it left behind
+        with on_screen_lock:
+            on_screen.clear()
 
 
 def run_app(name, cmd, helper=None):
@@ -486,8 +554,10 @@ def launch(app):
         cancel_games.clear()
         set_activity('games', 'waking')
         threading.Thread(target=games_wake, daemon=True).start()
-    elif app == 'movies':
+    elif app == 'movies' and cfg['movies_app'] == 'kodi':
         display.jobs.put(lambda: run_app('movies', cfg['kodi_cmd'], setup_jellyfin))
+    elif app == 'movies':
+        display.jobs.put(lambda: run_app('movies', jellyfin_cmd()))
     else:
         raise Oops(f'Unknown app {app!r}')
 
@@ -934,8 +1004,32 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def end_leftovers():
+    """End a kiosk or app that outlived an earlier launcher. They run in the login session,
+    which a service restart doesn't touch, and one of them would keep the screen."""
+    family = {}
+    for path in glob('/proc/[0-9]*/cmdline'):
+        try:
+            if os.stat(Path(path).parent).st_uid != os.getuid():
+                continue
+            exe = os.path.basename(Path(path).read_bytes().split(b'\0')[0])
+        except OSError:
+            continue
+        if exe in (b'cage', b'kodi.bin', b'moonlight-qt', b'moonlight'):
+            family.update(process_tree(int(path.split('/')[2])))
+    end_processes(family)
+
+
+def shutdown(*_):
+    display.stop_kiosk()
+    end_processes(seen())
+    os._exit(0)
+
+
 def main():
     log('RPi Media Console', VERSION)
+    end_leftovers()
+    signal.signal(signal.SIGTERM, shutdown)
     server = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     for target in (server.serve_forever, status_loop, update_loop, autopair):
         threading.Thread(target=target, daemon=True).start()
