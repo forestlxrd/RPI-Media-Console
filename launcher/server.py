@@ -537,13 +537,44 @@ def pc_awake(host):
     return any(port_open(host, port) for port in ports)
 
 
+steamlink_installing = threading.Lock()
+
+
+def ensure_steamlink():
+    """True once Steam Link is installed. Otherwise starts installing it, once, and returns False."""
+    if shutil.which('steamlink'):
+        return True
+    if steamlink_installing.acquire(blocking=False):
+        threading.Thread(target=install_steamlink, daemon=True).start()
+    return False
+
+
+def install_steamlink():
+    """apt-get through sudo, which Raspberry Pi OS allows the first user without a password."""
+    try:
+        notify('Installing Steam Link. This takes a few minutes.')
+        apt = ['sudo', '-n', 'env', 'DEBIAN_FRONTEND=noninteractive',
+               'apt-get', '-y', '-o', 'DPkg::Lock::Timeout=300']  # wait out a running automatic update
+        code, _, err = run(*apt, 'install', 'steamlink', timeout=1800)
+        if code:  # the package lists may be too old to find it
+            run(*apt, 'update', timeout=600)
+            code, _, err = run(*apt, 'install', 'steamlink', timeout=1800)
+        if code:
+            log('installing steamlink failed:', err.strip()[-2000:])
+            notify(f"Couldn't install Steam Link: {(err.strip().splitlines() or ['no reason given'])[-1]}")
+        else:
+            notify('Steam Link is installed. Press Games to start it.')
+    finally:
+        steamlink_installing.release()
+
+
 def stream_cmd():
     """How Games streams: Moonlight straight into the chosen Sunshine app, or Steam Link, whose own
     menu picks the PC (it remembers the last one) and has its own picture settings."""
     if cfg['stream_app'] == 'steamlink':
         steamlink = shutil.which('steamlink')
         if not steamlink:
-            raise Oops('Steam Link is not installed. See the README, or switch back to Moonlight in Settings → Playback.')
+            raise Oops('Steam Link is not installed yet')
         return [steamlink]
     moonlight = shutil.which('moonlight-qt') or shutil.which('moonlight')  # Pi OS names it moonlight-qt
     if not moonlight:
@@ -574,6 +605,8 @@ def launch(app):
         if state['activity']:
             raise Oops('Something is already starting')
     if app == 'games':
+        if cfg['stream_app'] == 'steamlink' and not ensure_steamlink():
+            raise Oops("Steam Link is still installing. Press Games again once it's ready.")
         cancel_games.clear()
         set_activity('games', 'waking')
         threading.Thread(target=games_wake, daemon=True).start()
@@ -1001,6 +1034,8 @@ def update_settings(changes):
         except (TypeError, ValueError):
             raise Oops(f'Bad value for {key}') from None
     cfg.update(changes)
+    if changes.get('stream_app') == 'steamlink':
+        ensure_steamlink()
     stored = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
     tmp = CONFIG.with_suffix('.tmp')

@@ -204,6 +204,32 @@ def test_stream_cmd():
         server.shutil.which = which
 
 
+def test_install_steamlink():
+    """Installs once however often it's asked, and refreshes the package lists if the first try fails."""
+    saved = server.run, server.notify, server.shutil.which
+    calls, said, release = [], [], threading.Event()
+
+    def fake_run(*cmd, timeout=20):
+        calls.append(cmd[-1])
+        release.wait(5)
+        return (1, '', 'E: Unable to locate package steamlink') if len(calls) == 1 else (0, '', '')
+    try:
+        server.run, server.notify, server.shutil.which = fake_run, said.append, lambda name: None
+        assert not server.ensure_steamlink()
+        assert not server.ensure_steamlink()  # still going: no second install
+        release.set()
+        for _ in range(50):
+            if not server.steamlink_installing.locked():
+                break
+            time.sleep(0.1)
+        assert calls == ['steamlink', 'update', 'steamlink'], calls
+        assert said[-1].startswith('Steam Link is installed'), said
+        server.shutil.which = lambda name: '/usr/bin/steamlink'
+        assert server.ensure_steamlink()
+    finally:
+        server.run, server.notify, server.shutil.which = saved
+
+
 def test_pc_awake():
     """Moonlight needs Sunshine; for Steam Link, Steam answering is enough."""
     saved, port_open = dict(server.cfg), server.port_open
@@ -231,4 +257,5 @@ if __name__ == '__main__':
     test_api_wants_local_host()
     test_stream_cmd()
     test_pc_awake()
+    test_install_steamlink()
     print('ok')
