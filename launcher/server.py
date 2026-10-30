@@ -569,11 +569,11 @@ def pc_awake(host):
     return any(port_open(host, port) for port in ports)
 
 
-# Runs inside cage. Lists the Qt platform plugins Steam Link ships (to last-app.log), then starts
-# it on Wayland, or on X11 through cage's Xwayland if its Qt has no Wayland plugin.
-STEAMLINK_IN_CAGE = '''echo "Qt platform plugins in Steam Link:"
-find ~/.local/share/SteamLink -path '*/platforms/*' -name '*.so' 2>/dev/null
-QT_QPA_PLATFORM='wayland;xcb' QT_WAYLAND_DISABLE_WINDOWDECORATION=1 exec "$1"'''
+# Runs inside cage. Steam Link's own Qt 5.14 has no Wayland plugin, so it runs on X11 through
+# cage's Xwayland, as on the Pi OS desktop. The DISPLAY line in last-app.log shows cage started it.
+STEAMLINK_IN_CAGE = '''echo "Xwayland display: ${DISPLAY:-none}"
+QT_QPA_PLATFORM=xcb exec "$1"'''
+STEAMLINK_PACKAGES = ['steamlink', 'xwayland']
 
 steamlink_installing = threading.Lock()
 
@@ -595,7 +595,7 @@ def sudo(*cmd, password=None, timeout=20):
 def ensure_steamlink(password=None):
     """True once Steam Link is installed. Otherwise starts installing it, once, and returns False.
     Raises Oops(needs_password=True) when sudo wants the user's password first."""
-    if shutil.which('steamlink'):
+    if shutil.which('steamlink') and shutil.which('Xwayland'):
         return True
     if steamlink_installing.locked():
         return False
@@ -612,10 +612,10 @@ def install_steamlink(password=None):
         notify('Installing Steam Link. This takes a few minutes.')
         apt = ['env', 'DEBIAN_FRONTEND=noninteractive',
                'apt-get', '-y', '-o', 'DPkg::Lock::Timeout=300']  # wait out a running automatic update
-        code, _, err = sudo(*apt, 'install', 'steamlink', password=password, timeout=1800)
+        code, _, err = sudo(*apt, 'install', *STEAMLINK_PACKAGES, password=password, timeout=1800)
         if code:  # the package lists may be too old to find it
             sudo(*apt, 'update', password=password, timeout=600)
-            code, _, err = sudo(*apt, 'install', 'steamlink', password=password, timeout=1800)
+            code, _, err = sudo(*apt, 'install', *STEAMLINK_PACKAGES, password=password, timeout=1800)
         if code:
             log('installing steamlink failed:', err.strip()[-2000:])
             notify(f"Couldn't install Steam Link: {(err.strip().splitlines() or ['no reason given'])[-1]}")

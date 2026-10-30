@@ -18,7 +18,7 @@ sudo apt-get update
 sudo apt-get install -y cage kodi python3 network-manager bluez
 sudo apt-get install -y kodi-peripheral-joystick || echo "    kodi-peripheral-joystick not found; Kodi won't see controllers until you add it."
 sudo apt-get install -y chromium || sudo apt-get install -y chromium-browser
-sudo apt-get install -y steamlink || echo "    steamlink not found; Settings → Playback can only stream with Moonlight."
+sudo apt-get install -y steamlink xwayland || echo "    steamlink not found; Settings → Playback can only stream with Moonlight."
 
 echo "==> Launcher $version into $home"
 sudo install -d -o "$user" -g "$user" "$home" "$home/releases"

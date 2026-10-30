@@ -269,9 +269,15 @@ def test_install_steamlink():
             if not server.steamlink_installing.locked():
                 break
             time.sleep(0.1)
-        assert calls == ['steamlink', 'update', 'steamlink'], calls
+        assert calls == ['xwayland', 'update', 'xwayland'], calls  # steamlink and xwayland, in one go
         assert said[-1].startswith('Steam Link is installed'), said
-        server.shutil.which = lambda name: '/usr/bin/steamlink'
+        server.shutil.which = lambda name: '/usr/bin/steamlink' if name == 'steamlink' else None
+        try:
+            server.ensure_steamlink()  # Xwayland still missing: installs again, which wants the password
+            raise AssertionError('counted Steam Link without Xwayland as installed')
+        except server.Oops as e:
+            assert e.extra == {'needs_password': True}
+        server.shutil.which = lambda name: f'/usr/bin/{name}'
         assert server.ensure_steamlink()
     finally:
         server.sudo, server.notify, server.shutil.which = saved
@@ -293,17 +299,15 @@ def test_sudo_password_on_stdin():
 
 
 def test_steamlink_in_cage():
-    """The script cage runs lists Steam Link's Qt plugins, then starts it on Wayland."""
-    with tempfile.TemporaryDirectory() as home:
-        plugins = Path(home, '.local/share/SteamLink/lib/qt/plugins/platforms')
-        plugins.mkdir(parents=True)
-        (plugins / 'libqwayland-egl.so').write_text('')
-        fake = Path(home, 'steamlink')
+    """The script cage runs notes the Xwayland display, then starts Steam Link on X11."""
+    with tempfile.TemporaryDirectory() as d:
+        fake = Path(d, 'steamlink')
         fake.write_text('#!/bin/sh\necho "platform=$QT_QPA_PLATFORM"\n')
         fake.chmod(0o755)
-        out = subprocess.run(['sh', '-c', server.STEAMLINK_IN_CAGE, 'sh', str(fake)], env={**os.environ, 'HOME': home},
-                             capture_output=True, text=True).stdout
-        assert out == f'Qt platform plugins in Steam Link:\n{plugins}/libqwayland-egl.so\nplatform=wayland;xcb\n', out
+        run = lambda env: subprocess.run(['sh', '-c', server.STEAMLINK_IN_CAGE, 'sh', str(fake)], env=env,
+                                         capture_output=True, text=True).stdout
+        assert run({**os.environ, 'DISPLAY': ':0'}) == 'Xwayland display: :0\nplatform=xcb\n'
+        assert run({k: v for k, v in os.environ.items() if k != 'DISPLAY'}).startswith('Xwayland display: none\n')
 
 
 def test_pc_awake():
