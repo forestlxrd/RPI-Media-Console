@@ -540,25 +540,44 @@ def pc_awake(host):
 steamlink_installing = threading.Lock()
 
 
-def ensure_steamlink():
-    """True once Steam Link is installed. Otherwise starts installing it, once, and returns False."""
+def sudo(*cmd, password=None, timeout=20):
+    """sudo with no terminal: the password, when there is one, goes in on stdin and nowhere else.
+    Without one it only works if sudoers lets this user in without a password."""
+    if password is None:
+        args, extra = ['sudo', '-n', *cmd], {'stdin': subprocess.DEVNULL}
+    else:
+        args, extra = ['sudo', '-S', '-p', '', *cmd], {'input': password + '\n'}
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, **extra)
+        return p.returncode, p.stdout, p.stderr
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 1, '', str(e)
+
+
+def ensure_steamlink(password=None):
+    """True once Steam Link is installed. Otherwise starts installing it, once, and returns False.
+    Raises Oops(needs_password=True) when sudo wants the user's password first."""
     if shutil.which('steamlink'):
         return True
+    if steamlink_installing.locked():
+        return False
+    if sudo('true', password=password)[0]:
+        raise Oops('That password did not work' if password else 'Installing Steam Link needs the Pi password',
+                   needs_password=True)
     if steamlink_installing.acquire(blocking=False):
-        threading.Thread(target=install_steamlink, daemon=True).start()
+        threading.Thread(target=install_steamlink, args=(password,), daemon=True).start()
     return False
 
 
-def install_steamlink():
-    """apt-get through sudo, which Raspberry Pi OS allows the first user without a password."""
+def install_steamlink(password=None):
     try:
         notify('Installing Steam Link. This takes a few minutes.')
-        apt = ['sudo', '-n', 'env', 'DEBIAN_FRONTEND=noninteractive',
+        apt = ['env', 'DEBIAN_FRONTEND=noninteractive',
                'apt-get', '-y', '-o', 'DPkg::Lock::Timeout=300']  # wait out a running automatic update
-        code, _, err = run(*apt, 'install', 'steamlink', timeout=1800)
+        code, _, err = sudo(*apt, 'install', 'steamlink', password=password, timeout=1800)
         if code:  # the package lists may be too old to find it
-            run(*apt, 'update', timeout=600)
-            code, _, err = run(*apt, 'install', 'steamlink', timeout=1800)
+            sudo(*apt, 'update', password=password, timeout=600)
+            code, _, err = sudo(*apt, 'install', 'steamlink', password=password, timeout=1800)
         if code:
             log('installing steamlink failed:', err.strip()[-2000:])
             notify(f"Couldn't install Steam Link: {(err.strip().splitlines() or ['no reason given'])[-1]}")
@@ -1034,8 +1053,6 @@ def update_settings(changes):
         except (TypeError, ValueError):
             raise Oops(f'Bad value for {key}') from None
     cfg.update(changes)
-    if changes.get('stream_app') == 'steamlink':
-        ensure_steamlink()
     stored = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
     tmp = CONFIG.with_suffix('.tmp')
@@ -1068,6 +1085,7 @@ ROUTES = {
     ('POST', '/api/power'): lambda b: power(b.get('action')),
     ('GET', '/api/addresses'): lambda b: addresses(),
     ('POST', '/api/shell'): lambda b: shell(b.get('cmd')),
+    ('POST', '/api/steamlink/install'): lambda b: {'ready': ensure_steamlink(b.get('password'))},
 }
 LOCAL_HOSTS = (f'localhost:{PORT}', f'127.0.0.1:{PORT}')
 

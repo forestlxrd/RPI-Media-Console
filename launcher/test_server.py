@@ -205,18 +205,30 @@ def test_stream_cmd():
 
 
 def test_install_steamlink():
-    """Installs once however often it's asked, and refreshes the package lists if the first try fails."""
-    saved = server.run, server.notify, server.shutil.which
+    """Asks for the password when sudo wants one, installs once however often it's asked,
+    and refreshes the package lists if the first try fails."""
+    saved = server.sudo, server.notify, server.shutil.which
     calls, said, release = [], [], threading.Event()
 
-    def fake_run(*cmd, timeout=20):
+    def fake_sudo(*cmd, password=None, timeout=20):
+        if password != 'right':
+            return 1, '', 'sudo: a password is required'
+        if cmd == ('true',):
+            return 0, '', ''
         calls.append(cmd[-1])
         release.wait(5)
         return (1, '', 'E: Unable to locate package steamlink') if len(calls) == 1 else (0, '', '')
     try:
-        server.run, server.notify, server.shutil.which = fake_run, said.append, lambda name: None
-        assert not server.ensure_steamlink()
-        assert not server.ensure_steamlink()  # still going: no second install
+        server.sudo, server.notify, server.shutil.which = fake_sudo, said.append, lambda name: None
+        for password in (None, 'wrong'):
+            try:
+                server.ensure_steamlink(password)
+                raise AssertionError('installed without a working password')
+            except server.Oops as e:
+                assert e.extra == {'needs_password': True}
+        assert not calls
+        assert not server.ensure_steamlink('right')
+        assert not server.ensure_steamlink()  # still going: no second install, no password asked
         release.set()
         for _ in range(50):
             if not server.steamlink_installing.locked():
@@ -227,7 +239,22 @@ def test_install_steamlink():
         server.shutil.which = lambda name: '/usr/bin/steamlink'
         assert server.ensure_steamlink()
     finally:
-        server.run, server.notify, server.shutil.which = saved
+        server.sudo, server.notify, server.shutil.which = saved
+
+
+def test_sudo_password_on_stdin():
+    """The password reaches sudo on stdin, never on the command line."""
+    with tempfile.TemporaryDirectory() as d:
+        fake = Path(d) / 'sudo'
+        fake.write_text('#!/bin/sh\nread pw; echo "args=$* pw=$pw"\n')
+        fake.chmod(0o755)
+        path = os.environ['PATH']
+        os.environ['PATH'] = f'{d}:{path}'
+        try:
+            assert server.sudo('true', password='s3cret')[1] == 'args=-S -p  true pw=s3cret\n'
+            assert server.sudo('true')[1] == 'args=-n true pw=\n'
+        finally:
+            os.environ['PATH'] = path
 
 
 def test_pc_awake():
@@ -258,4 +285,5 @@ if __name__ == '__main__':
     test_stream_cmd()
     test_pc_awake()
     test_install_steamlink()
+    test_sudo_password_on_stdin()
     print('ok')

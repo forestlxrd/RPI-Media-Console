@@ -102,7 +102,11 @@ const actions = {
   games() {
     gamesShownAt = Date.now();
     show('games');
-    api('launch', { app: 'games' }).catch((e) => { show('home', lastHomeFocus); fail(e); });
+    api('launch', { app: 'games' }).catch((e) => {
+      show('home', lastHomeFocus);
+      if (e.needs_password) installSteamLink();
+      else fail(e);
+    });
   },
   movies() {
     toast(state.settings?.movies_app === 'kodi' ? 'Opening Kodi…' : 'Opening Jellyfin…');
@@ -314,7 +318,23 @@ async function cycle(key) {
     await api('settings', { [key]: next });
     state.settings[key] = next;
     renderStreaming();
-  } catch (e) { fail(e); }
+  } catch (e) { return fail(e); }
+  if (key === 'stream_app' && next === 'steamlink') installSteamLink();
+}
+
+// Installs Steam Link if it's missing. apt runs through sudo, which may want the Pi password;
+// it goes straight to sudo and isn't kept.
+async function installSteamLink(password) {
+  try {
+    await api('steamlink/install', password == null ? {} : { password });
+  } catch (e) {
+    if (!e.needs_password) return fail(e);
+    const again = await askText('Pi password', {
+      body: password == null ? 'Installing Steam Link needs the password you log in to the Pi with.' : 'That password did not work. Try again.',
+      ok: 'Install', type: 'password',
+    });
+    if (again != null) installSteamLink(again);
+  }
 }
 
 function renderUpdates() {
