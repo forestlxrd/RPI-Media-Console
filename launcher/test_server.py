@@ -182,6 +182,42 @@ def test_api_wants_local_host():
         srv.shutdown()
 
 
+def test_stream_cmd():
+    saved, which = dict(server.cfg), server.shutil.which
+    try:
+        server.cfg.update(pc_host='pc.lan', moonlight_app='Desktop', resolution='1280x720', bitrate_kbps=8000)
+        server.shutil.which = lambda name: f'/usr/bin/{name}' if name in ('moonlight-qt', 'steamlink') else None
+        server.cfg['stream_app'] = 'moonlight'
+        assert server.stream_cmd()[:4] == ['/usr/bin/moonlight-qt', 'stream', 'pc.lan', 'Desktop']
+        server.cfg['stream_app'] = 'steamlink'
+        assert server.stream_cmd() == ['/usr/bin/steamlink']
+        server.shutil.which = lambda name: None
+        for app in ('steamlink', 'moonlight'):
+            server.cfg['stream_app'] = app
+            try:
+                server.stream_cmd()
+                raise AssertionError(f'{app} missing, but got a command')
+            except server.Oops:
+                pass
+    finally:
+        server.cfg.clear(), server.cfg.update(saved)
+        server.shutil.which = which
+
+
+def test_pc_awake():
+    """Moonlight needs Sunshine; for Steam Link, Steam answering is enough."""
+    saved, port_open = dict(server.cfg), server.port_open
+    try:
+        server.port_open = lambda host, port: port == server.STEAM_PORT
+        server.cfg['stream_app'] = 'moonlight'
+        assert not server.pc_awake('pc.lan')
+        server.cfg['stream_app'] = 'steamlink'
+        assert server.pc_awake('pc.lan')
+    finally:
+        server.cfg.clear(), server.cfg.update(saved)
+        server.port_open = port_open
+
+
 if __name__ == '__main__':
     test_nm_split()
     test_install_release()
@@ -193,4 +229,6 @@ if __name__ == '__main__':
     test_parse_addresses()
     test_shell()
     test_api_wants_local_host()
+    test_stream_cmd()
+    test_pc_awake()
     print('ok')

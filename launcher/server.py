@@ -2,7 +2,7 @@
 """RPi Media Console launcher.
 
 Serves the launcher page on localhost, keeps exactly one full-screen thing on the
-display (the kiosk browser, Moonlight or Kodi), and installs new GitHub releases.
+display (the kiosk browser, Moonlight, Steam Link or Kodi), and installs new GitHub releases.
 Stdlib only, so a fresh Raspberry Pi OS needs nothing from pip.
 """
 import contextlib
@@ -36,6 +36,7 @@ CONFIG = Path(os.environ.get('RPI_CONSOLE_CONFIG', Path.home() / '.config/rpi-co
 PORT = 8787
 HOME_URL = f'http://localhost:{PORT}/'
 SUNSHINE_PORT = 47989
+STEAM_PORT = 27036  # Steam listens here for Remote Play (Steam Link) while it runs
 
 DEFAULTS = {
     'ha_url': 'http://homeassistant.lan:8123',
@@ -44,6 +45,7 @@ DEFAULTS = {
     'gaming_off_script': 'script.gaming_off',
     'pc_host': '',
     'pc_name': 'Forest PC',
+    'stream_app': 'moonlight',  # 'moonlight' (Sunshine) or 'steamlink' (Steam Remote Play)
     'moonlight_app': 'Steam Big Picture',
     'moonlight_apps': ['Steam Big Picture', 'Desktop'],
     'resolution': '1920x1080',
@@ -57,7 +59,7 @@ DEFAULTS = {
     'github_token': '',
     'auto_update': True,
 }
-EDITABLE = {'movies_app': str, 'moonlight_app': str, 'resolution': str, 'bitrate_kbps': int, 'auto_update': bool}
+EDITABLE = {'movies_app': str, 'stream_app': str, 'moonlight_app': str, 'resolution': str, 'bitrate_kbps': int, 'auto_update': bool}
 PUBLIC = [*EDITABLE, 'moonlight_apps', 'pc_name']
 
 
@@ -304,7 +306,7 @@ def jellyfin_cmd():
 display = Display()
 
 
-GUIDE_HOLD = 5          # seconds the Xbox button is held to close Kodi or Moonlight
+GUIDE_HOLD = 5          # seconds the Xbox button is held to close Kodi, Moonlight or Steam Link
 EV_KEY, BTN_MODE = 1, 0x13C  # BTN_MODE is the Xbox button
 INPUT_EVENT = struct.Struct('llHHi')  # struct input_event: timeval, type, code, value
 
@@ -515,7 +517,7 @@ def games_wake():
             raise Oops('Set pc_host in the config file first')
         ha_script(cfg['gaming_on_script'])  # HA wakes the PC and starts Sunshine
         deadline = time.time() + 180
-        while not port_open(host, SUNSHINE_PORT):
+        while not pc_awake(host):
             if cancel_games.wait(2):
                 ha_script(cfg['gaming_off_script'])
                 return set_activity(None)
@@ -529,15 +531,36 @@ def games_wake():
         notify(str(e))
 
 
+def pc_awake(host):
+    """Sunshine answers once the PC is up (Home Assistant starts it); Steam, for Steam Link, once Steam runs."""
+    ports = (SUNSHINE_PORT, STEAM_PORT) if cfg['stream_app'] == 'steamlink' else (SUNSHINE_PORT,)
+    return any(port_open(host, port) for port in ports)
+
+
+def stream_cmd():
+    """How Games streams: Moonlight straight into the chosen Sunshine app, or Steam Link, whose own
+    menu picks the PC (it remembers the last one) and has its own picture settings."""
+    if cfg['stream_app'] == 'steamlink':
+        steamlink = shutil.which('steamlink')
+        if not steamlink:
+            raise Oops('Steam Link is not installed. See the README, or switch back to Moonlight in Settings → Playback.')
+        return [steamlink]
+    moonlight = shutil.which('moonlight-qt') or shutil.which('moonlight')  # Pi OS names it moonlight-qt
+    if not moonlight:
+        raise Oops('Moonlight is not installed')
+    return [moonlight, 'stream', cfg['pc_host'], cfg['moonlight_app'],
+            '--resolution', cfg['resolution'], '--fps', '60',
+            '--bitrate', str(cfg['bitrate_kbps']), '--display-mode', 'fullscreen']
+
+
 def stream():
     set_activity('games', 'streaming')
     try:
-        moonlight = shutil.which('moonlight-qt') or 'moonlight'  # Pi OS names it moonlight-qt
-        run_fullscreen([moonlight, 'stream', cfg['pc_host'], cfg['moonlight_app'],
-                        '--resolution', cfg['resolution'], '--fps', '60',
-                        '--bitrate', str(cfg['bitrate_kbps']), '--display-mode', 'fullscreen'])
-    except OSError:
-        notify('Moonlight is not installed')
+        run_fullscreen(stream_cmd())
+    except Oops as e:
+        notify(str(e))
+    except OSError as e:
+        notify(f"Couldn't start the stream: {e.strerror}")
     finally:
         try:
             ha_script(cfg['gaming_off_script'])  # HA only puts the PC to sleep if it woke it
@@ -1074,7 +1097,7 @@ def end_leftovers():
             exe = os.path.basename(Path(path).read_bytes().split(b'\0')[0])
         except OSError:
             continue
-        if exe in (b'cage', b'kodi.bin', b'moonlight-qt', b'moonlight'):
+        if exe in (b'cage', b'kodi.bin', b'moonlight-qt', b'moonlight', b'steamlink'):
             family.update(process_tree(int(path.split('/')[2])))
     end_processes(family)
 

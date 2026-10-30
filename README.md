@@ -7,11 +7,12 @@ A controller-driven launcher for a Raspberry Pi 4 on a TV. Pick **Games** to wak
 - `launcher/server.py` runs as a systemd service on tty1. It serves the launcher page on `localhost:8787` and keeps one thing on screen at a time: Chromium in a `cage` kiosk, or Moonlight, or Kodi. When Moonlight or Kodi exits, the launcher comes back.
 - `launcher/web/` holds the launcher page. The controller drives it through the Gamepad API, and text fields (Wi-Fi passwords) get an Xbox-style on-screen keyboard.
 - **Games** asks Home Assistant to run `script.gaming_on`, waits for Sunshine to answer on port 47989, then starts Moonlight. When the stream ends it runs `script.gaming_off`, and Home Assistant decides whether the PC goes back to sleep.
+  - Settings → Playback → **Stream games with** switches to Valve's Steam Link instead, which streams from Steam itself (Steam Remote Play) rather than Sunshine. The launcher still wakes the PC, then waits for Sunshine or Steam to answer. Steam Link has its own menu for picking the PC and the picture quality, so Moonlight's settings hide while it's chosen. The first time, pair it from that menu: it shows a PIN to enter in Steam on the PC. If it doesn't list the PC over the VPN, choose **Other Computer** there.
 - **Movies** opens Jellyfin's own TV app full screen in a separate browser window. Settings → Playback switches it to Kodi instead. Kodi plays more video formats on the Pi's hardware; the browser leaves x265/HEVC files for your server to convert.
   - The first time, use a mouse to set Jellyfin's Settings → Display → Display mode to **TV** and turn on Settings → Controls → **Enable gamepad**. Jellyfin keeps both in that browser only.
   - If videos play without sound, set the audio to **FLAC** in Jellyfin's settings in that same window. The browser can't decode AC3/EAC3 or DTS, and FLAC makes Jellyfin convert those tracks. Like the settings above, it lives in that browser only, so set it again if the profile in `~/.local/share/rpi-console/jellyfin` is ever reset.
   - With Kodi, the first launch installs the Jellyfin add-on for you; the add-on then asks once for your server address and login, and your library shows up in Kodi's Movies and TV shows menus.
-- **Getting back:** hold the Xbox button for 5 seconds in Jellyfin, Kodi or Moonlight. The launcher closes that app, along with anything it started, and comes back. Moonlight's own combo (Menu + View + LB + RB) ends a stream too.
+- **Getting back:** hold the Xbox button for 5 seconds in Jellyfin, Kodi, Moonlight or Steam Link. The launcher closes that app, along with anything it started, and comes back. Moonlight's own combo (Menu + View + LB + RB) ends a stream too.
 - **Sound** goes to whichever HDMI port has the TV on it. The launcher checks before starting Kodi or Moonlight, so leave Kodi's audio output on Default.
 
 The server uses only the Python standard library.
@@ -22,6 +23,7 @@ You need Raspberry Pi OS Lite (64-bit, the Trixie-based release or newer) with S
 
 - [moonlight-qt](https://github.com/moonlight-stream/moonlight-docs/wiki/Installing-Moonlight-Qt-on-Raspberry-Pi-4), paired once with Sunshine
 - [xpadneo](https://github.com/atar-axis/xpadneo) for Xbox controllers over Bluetooth
+- Optional: Valve's `steamlink` package, for Steam Link. `install.sh` installs it when your apt sources have it. On a Pi set up before v0.6.0, install it from Settings → Terminal with `sudo systemd-run apt-get install -y steamlink` (systemd-run keeps it going past the terminal's 30 seconds), and check with `apt-cache policy steamlink` a minute later.
 
 Copy your OpenVPN client file to the Pi (for example `scp home.ovpn pi@raspberrypi.local:~`), then on the Pi:
 
@@ -63,7 +65,7 @@ The launcher keeps the VPN up whenever home isn't reachable directly: within a m
 
 Settings → Terminal shows the Pi's addresses for SSH (on its Wi-Fi, cable and VPN) and runs shell commands from the controller: press A on the command field for the on-screen keyboard, and Menu runs it. Each command gets 30 seconds and can't be typed into, so use it for quick checks rather than editors or prompts. Up and down scroll the output.
 
-Settings → Playback changes `movies_app`, `moonlight_app`, `resolution` and `bitrate_kbps` from the couch.
+Settings → Playback changes `movies_app`, `stream_app` (`moonlight` or `steamlink`), `moonlight_app`, `resolution` and `bitrate_kbps` from the couch.
 
 ## Updates
 
@@ -96,7 +98,7 @@ You can turn automatic updates off in Settings → Updates.
 | Menu | | Done (Enter) |
 | View | | Show the password |
 | Xbox button, or View + Menu | Home | |
-| Hold the Xbox button 5 s | Closes Jellyfin, Kodi or Moonlight and returns here | |
+| Hold the Xbox button 5 s | Closes Jellyfin, Kodi, Moonlight or Steam Link and returns here | |
 
 Kodi uses its own controller mapping. If it ignores the controller, set it up once under Settings → System → Input → Configure attached controllers (a mouse helps the first time).
 

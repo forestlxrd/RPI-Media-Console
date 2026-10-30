@@ -286,15 +286,18 @@ $('#pads-pair').onclick = () => api('controllers/pair', {}).then(poll).catch(fai
 
 const STREAM_OPTIONS = {
   movies_app: { label: 'Movies open in', values: () => ['jellyfin', 'kodi'], show: (v) => ({ jellyfin: 'Jellyfin', kodi: 'Kodi' })[v] ?? v },
-  moonlight_app: { label: 'Games start in', values: () => state.settings.moonlight_apps, show: (v) => v },
-  resolution: { label: 'Game picture', values: () => ['1280x720', '1920x1080'], show: (v) => ({ '1280x720': '720p', '1920x1080': '1080p' })[v] ?? v },
-  bitrate_kbps: { label: 'Game bitrate (lower it if games stutter)', values: () => [8000, 10000, 15000, 20000, 30000], show: (v) => `${v / 1000} Mbps` },
+  stream_app: { label: 'Stream games with', values: () => ['moonlight', 'steamlink'], show: (v) => ({ moonlight: 'Moonlight', steamlink: 'Steam Link' })[v] ?? v },
+  // Steam Link keeps its own settings, in its own menu.
+  moonlight_app: { label: 'Games start in', values: () => state.settings.moonlight_apps, show: (v) => v, moonlight: true },
+  resolution: { label: 'Game picture', values: () => ['1280x720', '1920x1080'], show: (v) => ({ '1280x720': '720p', '1920x1080': '1080p' })[v] ?? v, moonlight: true },
+  bitrate_kbps: { label: 'Game bitrate (lower it if games stutter)', values: () => [8000, 10000, 15000, 20000, 30000], show: (v) => `${v / 1000} Mbps`, moonlight: true },
 };
 
 function renderStreaming() {
   const s = state.settings ?? {};
   const focusedKey = document.activeElement?.dataset?.key;
-  $('#stream-list').replaceChildren(...Object.entries(STREAM_OPTIONS).map(([key, o]) => {
+  const shown = Object.entries(STREAM_OPTIONS).filter(([, o]) => !o.moonlight || s.stream_app !== 'steamlink');
+  $('#stream-list').replaceChildren(...shown.map(([key, o]) => {
     const row = h('button', { className: 'row setting', onclick: () => cycle(key) },
       h('span', { className: 'row-name', textContent: o.label }),
       h('strong', { textContent: o.show(s[key]) }));
@@ -434,7 +437,7 @@ function render() {
     } else {
       const pc = state.settings?.pc_name ?? 'your PC';
       $('#games-title').textContent = act.phase === 'waking' ? `Waking ${pc}` : 'Starting the stream';
-      $('#games-detail').textContent = act.phase === 'waking' ? 'This usually takes about half a minute.' : 'Moonlight opens in a moment.';
+      $('#games-detail').textContent = act.phase === 'waking' ? 'This usually takes about half a minute.' : `${state.settings?.stream_app === 'steamlink' ? 'Steam Link' : 'Moonlight'} opens in a moment.`;
       const secs = Math.max(0, Math.round(Date.now() / 1000 - act.since));
       $('#games-elapsed').textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
     }
