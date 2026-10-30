@@ -61,6 +61,7 @@
         <button data-panel="controllers">Controllers</button>
         <button data-panel="streaming">Playback</button>
         <button data-panel="updates">Updates</button>
+        <button data-panel="terminal">Terminal</button>
       </nav>
 
       <div class="panel" id="panel-wifi" hidden>
@@ -101,6 +102,20 @@
           <button class="btn btn-go" id="upd-apply" hidden>Restart and update</button>
         </div>
         <ul class="list"><li><button class="row setting" id="upd-auto"><span class="row-name">Install updates automatically</span><strong></strong></button></li></ul>
+      </div>
+
+      <div class="panel" id="panel-terminal" hidden>
+        <h2>Terminal</h2>
+        <p class="lede">To reach the Pi over SSH, use one of these addresses.</p>
+        <dl class="facts" id="term-where"></dl>
+        <p class="lede">Or run a command here. It gets 30 seconds, and anything that waits for typing stops right away.</p>
+        <form class="term-line" id="term-form">
+          <input id="term-cmd" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type a command" aria-label="Command" data-hint="A:Type|B:Back">
+          <button class="btn btn-go">Run</button>
+        </form>
+        <pre class="term-out" id="term-out" tabindex="0" data-scroll data-hint="↑↓:Scroll|B:Back" hidden></pre>
+        <h3>Recent</h3>
+        <ul class="list" id="term-history"></ul>
       </div>
     </section>
   </main>

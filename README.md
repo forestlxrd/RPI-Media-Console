@@ -61,6 +61,8 @@ The launcher keeps the VPN up whenever home isn't reachable directly: within a m
 | `github_repo` | `forestlxrd/RPI-Media-Console` | Where updates come from. |
 | `github_token` | | Only needed if the repo goes private. |
 
+Settings → Terminal shows the Pi's addresses for SSH (on its Wi-Fi, cable and VPN) and runs shell commands from the controller: press A on the command field for the on-screen keyboard, and Menu runs it. Each command gets 30 seconds and can't be typed into, so use it for quick checks rather than editors or prompts. Up and down scroll the output.
+
 Settings → Playback changes `movies_app`, `moonlight_app`, `resolution` and `bitrate_kbps` from the couch.
 
 ## Updates

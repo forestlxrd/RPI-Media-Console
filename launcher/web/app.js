@@ -78,8 +78,14 @@ document.addEventListener('focusin', hints);
 Pad.useKeyboard();
 Pad.push((ev) => {
   switch (ev) {
-    case 'up': case 'down': case 'left': case 'right':
+    case 'up': case 'down': case 'left': case 'right': {
+      const el = document.activeElement;
+      if ((ev === 'up' || ev === 'down') && el?.matches('[data-scroll]')) {  // scroll until the end, then move on
+        const room = ev === 'down' ? el.scrollHeight - el.clientHeight - el.scrollTop : el.scrollTop;
+        if (room > 1) return el.scrollBy({ top: (ev === 'down' ? 1 : -1) * el.clientHeight * 0.3 });
+      }
       return Pad.move(ev, document.querySelector('dialog:modal') ?? document.body);
+    }
     case 'A': {
       const el = document.activeElement;
       if (OSK.isText(el)) OSK.open(el);
@@ -158,7 +164,7 @@ async function askText(title, { body = '', ok = 'OK', type = 'text' } = {}) {
 
 // ---------------------------------------------------------------- settings
 
-const panels = { wifi: loadWifi, controllers: loadPads, streaming: renderStreaming, updates: renderUpdates };
+const panels = { wifi: loadWifi, controllers: loadPads, streaming: renderStreaming, updates: renderUpdates, terminal: loadTerminal };
 
 function openSettings(name) {
   show('settings', $(`[data-panel="${name}"]`));
@@ -334,6 +340,65 @@ $('#upd-auto').onclick = async () => {
     state.settings.auto_update = !state.settings.auto_update;
     renderUpdates();
   } catch (e) { fail(e); }
+};
+
+// Terminal: one command at a time, with the commands run before kept in this browser.
+const HISTORY_KEY = 'terminal-history';
+
+function termHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? []; } catch { return []; }
+}
+
+function renderHistory() {
+  const list = termHistory();
+  $('#term-history').replaceChildren(...(list.length ? list.map((cmd) => h('li', {},
+    h('button', { className: 'row', onclick: () => runCommand(cmd) },
+      h('span', { className: 'row-name', textContent: cmd }))))
+    : [h('li', { className: 'empty', textContent: 'Commands you run show up here.' })]));
+  for (const b of document.querySelectorAll('#term-history .row')) b.dataset.hint = 'A:Run again|B:Back';
+}
+
+async function loadTerminal() {
+  renderHistory();
+  const where = $('#term-where');
+  try {
+    const { host, addresses } = await api('addresses');
+    where.replaceChildren(h('dt', { textContent: 'Name' }), h('dd', { textContent: `${host}.local` }),
+      ...addresses.flatMap((a) => [h('dt', { textContent: a.kind }), h('dd', { textContent: a.addr })]));
+  } catch (e) {
+    where.replaceChildren(h('dt', { textContent: 'Addresses' }), h('dd', { textContent: e.message }));
+  }
+}
+
+let termBusy = false;
+async function runCommand(cmd) {
+  cmd = cmd.trim();
+  if (!cmd || termBusy) return;
+  termBusy = true;
+  $('#term-cmd').value = cmd;
+  const out = $('#term-out');
+  out.hidden = false;
+  out.textContent = `$ ${cmd}\nRunning…`;
+  const list = [cmd, ...termHistory().filter((c) => c !== cmd)].slice(0, 20);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* history is a nicety */ }
+  renderHistory();
+  try {
+    const r = await api('shell', { cmd });
+    const text = r.output && !r.output.endsWith('\n') ? `${r.output}\n` : r.output;
+    out.textContent = `$ ${cmd}\n${r.cut ? '[only the end is shown]\n' : ''}${text}`
+      + (r.timed_out ? '[stopped after 30 seconds]' : `[exit code ${r.code}]`);
+  } catch (e) {
+    out.textContent = `$ ${cmd}\n${e.message}`;
+  } finally {
+    termBusy = false;
+  }
+  out.scrollTop = 0;
+  out.focus();
+}
+
+$('#term-form').onsubmit = (e) => {
+  e.preventDefault();
+  runCommand($('#term-cmd').value);
 };
 
 // ---------------------------------------------------------------- live status

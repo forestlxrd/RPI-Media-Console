@@ -883,6 +883,58 @@ def autopair():
         start_pairing(timeout=120, until_pad=True)
 
 
+# ---------------------------------------------------------------- terminal
+
+SHELL_TIMEOUT = 30       # seconds a command may run; then it's stopped and what it printed so far is shown
+SHELL_KEEP = 100_000     # characters of output kept, from the end, where the answer usually is
+ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+
+
+def shell(cmd, timeout=SHELL_TIMEOUT):
+    """Run one command line from Settings → Terminal, like a non-interactive SSH session.
+    Nothing can be typed into it, so a command that asks a question gets no answer and stops."""
+    cmd = (cmd or '').strip()
+    if not cmd:
+        raise Oops('Type a command first')
+    env = {**app_env(), 'TERM': 'dumb', 'PAGER': 'cat', 'SYSTEMD_PAGER': '', 'SYSTEMD_COLORS': '0'}
+    proc = subprocess.Popen(['bash', '-lc', cmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, cwd=Path.home(), env=env, start_new_session=True)
+    timed_out = False
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)  # the whole command, pipes and all
+        try:
+            out, _ = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:  # something left its group and holds the pipe
+            proc.kill()
+            out = b''
+    text = ANSI.sub('', out.decode('utf-8', 'replace'))
+    return {'output': text[-SHELL_KEEP:], 'cut': len(text) > SHELL_KEEP,
+            'code': proc.returncode, 'timed_out': timed_out}
+
+
+def parse_addresses(ip_out, vpn='tun0'):
+    """`ip -o -4 addr show` → [{'kind': 'Wi-Fi', 'iface': 'wlan0', 'addr': '…'}], loopback left out."""
+    found = []
+    for line in ip_out.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[2] != 'inet' or parts[1] == 'lo':
+            continue
+        iface = parts[1]
+        kind = ('VPN' if iface == vpn or iface.startswith(('tun', 'wg')) else 'Wi-Fi' if iface.startswith('wl')
+                else 'Cable' if iface.startswith(('eth', 'en')) else iface)
+        found.append({'kind': kind, 'iface': iface, 'addr': parts[3].split('/')[0]})
+    return found
+
+
+def addresses():
+    _, out, _ = run('ip', '-o', '-4', 'addr', 'show')
+    return {'host': socket.gethostname(), 'addresses': parse_addresses(out, cfg['vpn_interface'])}
+
+
 # ---------------------------------------------------------------- status, settings, power
 
 def status_loop():
@@ -956,7 +1008,10 @@ ROUTES = {
     ('POST', '/api/update'): lambda b: update_now(),
     ('POST', '/api/restart'): lambda b: display.jobs.put(restart_self),
     ('POST', '/api/power'): lambda b: power(b.get('action')),
+    ('GET', '/api/addresses'): lambda b: addresses(),
+    ('POST', '/api/shell'): lambda b: shell(b.get('cmd')),
 }
+LOCAL_HOSTS = (f'localhost:{PORT}', f'127.0.0.1:{PORT}')
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -983,6 +1038,10 @@ class Handler(SimpleHTTPRequestHandler):
         self.api('POST')
 
     def api(self, method):
+        # A page whose own name points at 127.0.0.1 (DNS rebinding) counts as same-origin and
+        # could send X-Console; its Host header still gives it away.
+        if self.headers.get('Host') not in LOCAL_HOSTS:
+            return self.send_error(403)
         route = ROUTES.get((method, self.path.split('?')[0]))
         if not route:
             return self.send_error(404)

@@ -130,6 +130,58 @@ def test_close_app_leaves_nothing():
         assert gone(pid), f'{pid} still running'
 
 
+def test_parse_addresses():
+    out = ('1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever preferred_lft forever\n'
+           '3: wlan0    inet 192.0.2.10/24 brd 192.0.2.255 scope global dynamic noprefixroute wlan0\\       valid_lft 86000sec\n'
+           '5: tun0    inet 198.51.100.6/24 scope global noprefixroute tun0\\       valid_lft forever\n'
+           '2: eth0    inet 203.0.113.4/24 brd 203.0.113.255 scope global eth0\n')
+    assert server.parse_addresses(out) == [
+        {'kind': 'Wi-Fi', 'iface': 'wlan0', 'addr': '192.0.2.10'},
+        {'kind': 'VPN', 'iface': 'tun0', 'addr': '198.51.100.6'},
+        {'kind': 'Cable', 'iface': 'eth0', 'addr': '203.0.113.4'},
+    ]
+    assert server.parse_addresses('') == []
+
+
+def test_shell():
+    r = server.shell('echo hi; echo oops >&2; exit 3')
+    assert r['output'] == 'hi\noops\n' and r['code'] == 3 and not r['timed_out'], r
+    assert server.shell('read x; echo "got [$x]"')['output'] == 'got []\n'  # nothing to type into, no hang
+    assert server.shell("printf '\\033[1;31mred\\033[0m'")['output'] == 'red'
+    try:
+        server.shell('  ')
+        raise AssertionError('ran an empty command')
+    except server.Oops:
+        pass
+    started = time.monotonic()
+    r = server.shell('echo before; sleep 30 | cat', timeout=1)
+    assert r['timed_out'] and r['output'] == 'before\n', r
+    assert time.monotonic() - started < 5
+
+
+def test_api_wants_local_host():
+    """Pages elsewhere can't use the API, even one whose name points at 127.0.0.1."""
+    import http.client
+    srv = server.ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port, hosts = srv.server_address[1], server.LOCAL_HOSTS
+
+    def post(host, console='1'):
+        c = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+        c.request('POST', '/api/shell', '{"cmd": "echo hi"}', {'Host': host, 'X-Console': console})
+        r = c.getresponse()
+        return r.status, r.read()
+    try:
+        server.LOCAL_HOSTS = (f'localhost:{port}',)
+        assert post('evil.example:8787')[0] == 403
+        assert post(f'localhost:{port}', console='')[0] == 403
+        status, body = post(f'localhost:{port}')
+        assert status == 200 and b'hi' in body, (status, body)
+    finally:
+        server.LOCAL_HOSTS = hosts
+        srv.shutdown()
+
+
 if __name__ == '__main__':
     test_nm_split()
     test_install_release()
@@ -138,4 +190,7 @@ if __name__ == '__main__':
     test_kms_device()
     test_close_app_leaves_nothing()
     test_run_fullscreen_leaves_nothing()
+    test_parse_addresses()
+    test_shell()
+    test_api_wants_local_host()
     print('ok')
