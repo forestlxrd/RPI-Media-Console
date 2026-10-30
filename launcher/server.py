@@ -675,7 +675,9 @@ def stream_cmd():
     moonlight = shutil.which('moonlight-qt') or shutil.which('moonlight')  # Pi OS names it moonlight-qt
     if not moonlight:
         raise Oops('Moonlight is not installed')
-    return [moonlight, 'stream', cfg['pc_host'], cfg['moonlight_app'],
+    # SDL's own HIDAPI driver ignored these Bluetooth pads (xpadneo) in Steam Link until it was
+    # turned off; Moonlight uses SDL the same way, so read them through evdev here too.
+    return ['env', 'SDL_JOYSTICK_HIDAPI=0', moonlight, 'stream', cfg['pc_host'], cfg['moonlight_app'],
             '--resolution', cfg['resolution'], '--fps', '60',
             '--bitrate', str(cfg['bitrate_kbps']), '--display-mode', 'fullscreen']
 

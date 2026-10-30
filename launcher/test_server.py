@@ -221,7 +221,7 @@ def test_stream_cmd():
         server.cfg.update(pc_host='pc.lan', moonlight_app='Desktop', resolution='1280x720', bitrate_kbps=8000)
         server.shutil.which = lambda name: f'/usr/bin/{name}' if name in ('moonlight-qt', 'steamlink') else None
         server.cfg['stream_app'] = 'moonlight'
-        assert server.stream_cmd()[:4] == ['/usr/bin/moonlight-qt', 'stream', 'pc.lan', 'Desktop']
+        assert server.stream_cmd()[:6] == ['env', 'SDL_JOYSTICK_HIDAPI=0', '/usr/bin/moonlight-qt', 'stream', 'pc.lan', 'Desktop']
         server.cfg['stream_app'] = 'steamlink'
         assert server.stream_cmd() == ['/usr/bin/steamlink']  # no cage: straight on the screen
         server.shutil.which = lambda name: f'/usr/bin/{name}' if name in ('cage', 'steamlink') else None
