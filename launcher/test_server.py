@@ -1,5 +1,6 @@
 """Self-check for the parts that can break without a Pi: python3 launcher/test_server.py"""
 import io
+import json
 import os
 import subprocess
 import tarfile
@@ -289,6 +290,23 @@ def test_sudo_password_on_stdin():
             os.environ['PATH'] = path
 
 
+def test_steamlink_env():
+    saved = server.kms_device, dict(os.environ)
+    try:
+        os.environ.update(XDG_SESSION_TYPE='wayland', WAYLAND_DISPLAY='wayland-1')
+        server.kms_device = lambda: '/dev/dri/card1'
+        with tempfile.TemporaryDirectory() as d:
+            env = server.steamlink_env(Path(d))
+            assert 'XDG_SESSION_TYPE' not in env and 'WAYLAND_DISPLAY' not in env
+            assert env['QT_QPA_PLATFORM'] == 'eglfs' and env['QT_QPA_EGLFS_INTEGRATION'] == 'eglfs_kms'
+            assert json.loads(Path(env['QT_QPA_EGLFS_KMS_CONFIG']).read_text())['device'] == '/dev/dri/card1'
+        server.kms_device = lambda: None
+        assert 'QT_QPA_EGLFS_KMS_CONFIG' not in server.steamlink_env(Path(d))
+    finally:
+        server.kms_device = saved[0]
+        os.environ.clear(), os.environ.update(saved[1])
+
+
 def test_pc_awake():
     """Moonlight needs Sunshine; for Steam Link, Steam answering is enough."""
     saved, port_open = dict(server.cfg), server.port_open
@@ -318,6 +336,7 @@ if __name__ == '__main__':
     test_api_wants_local_host()
     test_stream_cmd()
     test_pc_awake()
+    test_steamlink_env()
     test_install_steamlink()
     test_sudo_password_on_stdin()
     print('ok')

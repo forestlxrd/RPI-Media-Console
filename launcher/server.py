@@ -471,7 +471,7 @@ def seen(pid=None):
         return dict(on_screen)
 
 
-def run_fullscreen(cmd):
+def run_fullscreen(cmd, env=None):
     """Run Kodi, Moonlight or Jellyfin until it exits or the Xbox button is held for GUIDE_HOLD
     seconds. Returns only after every process it started has ended, because anything left
     holds on to the screen and the launcher can't come back."""
@@ -480,7 +480,7 @@ def run_fullscreen(cmd):
     out = open(APP_LOG, 'w', buffering=1)
     out.write(f"{time.strftime('%H:%M:%S')} starting {shlex.join(cmd)}\n")
     try:
-        proc = subprocess.Popen(cmd, env=app_env(), stdout=out, stderr=subprocess.STDOUT)
+        proc = subprocess.Popen(cmd, env=env or app_env(), stdout=out, stderr=subprocess.STDOUT)
     except OSError:
         out.close()
         raise
@@ -635,10 +635,28 @@ def stream_cmd():
             '--bitrate', str(cfg['bitrate_kbps']), '--display-mode', 'fullscreen']
 
 
+def steamlink_env(state_dir=APP_LOG.parent):
+    """Steam Link's menus are Qt. The service's XDG_SESSION_TYPE=wayland (meant for cage) steers Qt
+    towards Wayland, which isn't running, and it lands on a backend with no OpenGL that draws the
+    first screen and never redraws. Point it at the screen directly instead, like Moonlight."""
+    env = app_env()
+    for key in ('XDG_SESSION_TYPE', 'WAYLAND_DISPLAY'):
+        env.pop(key, None)
+    env.update(QT_QPA_PLATFORM='eglfs', QT_QPA_EGLFS_INTEGRATION='eglfs_kms')
+    gpu = kms_device()
+    if gpu:  # Qt picks the Pi 4's screenless 3D card otherwise, the same trap cage had
+        state_dir.mkdir(parents=True, exist_ok=True)
+        config = state_dir / 'qt-kms.json'
+        config.write_text(json.dumps({'device': gpu, 'hwcursor': False}) + '\n')
+        env['QT_QPA_EGLFS_KMS_CONFIG'] = str(config)
+    return env
+
+
 def stream():
     set_activity('games', 'streaming')
     try:
-        run_fullscreen(stream_cmd())
+        cmd = stream_cmd()
+        run_fullscreen(cmd, steamlink_env() if cfg['stream_app'] == 'steamlink' else None)
     except Oops as e:
         notify(str(e))
     except OSError as e:
