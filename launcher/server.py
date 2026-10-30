@@ -34,6 +34,9 @@ HERE = Path(__file__).resolve().parent  # <release>/launcher
 ROOT = HERE.parent                      # <release>
 INSTALL = Path(os.environ.get('RPI_CONSOLE_HOME', '/opt/rpi-console'))
 CONFIG = Path(os.environ.get('RPI_CONSOLE_CONFIG', Path.home() / '.config/rpi-console/config.json'))
+# What the last app printed. The journal files it under the login session rather than under
+# rpi-console (PAMName= moves the launcher there), so a file of its own is easier to find.
+APP_LOG = Path(os.environ.get('RPI_CONSOLE_APP_LOG', Path.home() / '.local/state/rpi-console/last-app.log'))
 PORT = 8787
 HOME_URL = f'http://localhost:{PORT}/'
 SUNSHINE_PORT = 47989
@@ -61,15 +64,15 @@ DEFAULTS = {
     'auto_update': True,
     # One-press commands in Settings → Terminal, as [label, command].
     'quick_commands': [
-        ['Launcher log', 'journalctl -u rpi-console -b -n 80 --no-pager'],
-        ['Last app output', "journalctl -u rpi-console -b --no-pager -o cat | "
-                            "awk '/^[0-9:]+ starting /{b=\"\"} {b=b $0 \"\\n\"} END{printf \"%s\", b}' | tail -n 200"],
+        # The launcher logs as python3 inside the login session, not as the rpi-console unit.
+        ['Launcher log', 'journalctl -b -t python3 _UID=$(id -u) -n 80 --no-pager -o cat'],
+        ['Last app output', 'tail -n 300 ~/.local/state/rpi-console/last-app.log'],
         ['Steam Link logs', "f=$(find ~/.local/share ~/.config /tmp -ipath '*steam*' -iname '*log*' -type f -mmin -240 2>/dev/null | sort -u); "
                             "[ -n \"$f\" ] || echo 'No Steam Link logs from the last 4 hours'; "
                             "echo \"$f\" | while read -r l; do [ -n \"$l\" ] && { echo \"== $l\"; tail -n 40 \"$l\"; }; done"],
         ['Steam Link files', 'dpkg -l steamlink | tail -n 1; ls -la ~/.local/share/SteamLink 2>&1 | head -n 30'],
         ['Controllers', "ls -l /dev/hidraw* /dev/input/by-id/ 2>&1; grep -E '^(N|H):' /proc/bus/input/devices"],
-        ['Moonlight controllers', "journalctl -u rpi-console -b --no-pager | grep -i gamepad | tail -n 40; "
+        ['Moonlight controllers', "grep -i gamepad ~/.local/state/rpi-console/last-app.log | tail -n 40; "
                                   "grep -i multi ~/.config/Moonlight*/*.conf"],
         ['Sound', 'cat /proc/asound/cards; grep -H . /proc/asound/card*/pcm*p/sub*/status 2>/dev/null'],
         ['Network', 'ip -br addr; nmcli -t -f NAME,TYPE,DEVICE connection show --active'],
@@ -472,8 +475,15 @@ def run_fullscreen(cmd):
     """Run Kodi, Moonlight or Jellyfin until it exits or the Xbox button is held for GUIDE_HOLD
     seconds. Returns only after every process it started has ended, because anything left
     holds on to the screen and the launcher can't come back."""
-    log('starting', shlex.join(cmd))  # Settings → Terminal → Last app output starts reading here
-    proc = subprocess.Popen(cmd, env=app_env())
+    log('starting', shlex.join(cmd))
+    APP_LOG.parent.mkdir(parents=True, exist_ok=True)
+    out = open(APP_LOG, 'w', buffering=1)
+    out.write(f"{time.strftime('%H:%M:%S')} starting {shlex.join(cmd)}\n")
+    try:
+        proc = subprocess.Popen(cmd, env=app_env(), stdout=out, stderr=subprocess.STDOUT)
+    except OSError:
+        out.close()
+        raise
     stop = threading.Event()
     with on_screen_lock:
         on_screen.clear()
@@ -490,6 +500,7 @@ def run_fullscreen(cmd):
     try:
         code = proc.wait()
         log(Path(cmd[0]).name, 'exited with', code)
+        out.write(f"{time.strftime('%H:%M:%S')} {Path(cmd[0]).name} exited with {code}\n")
         return code
     finally:
         stop.set()
@@ -498,6 +509,7 @@ def run_fullscreen(cmd):
         end_processes(seen())  # whatever it left behind
         with on_screen_lock:
             on_screen.clear()
+        out.close()
 
 
 def run_app(name, cmd, helper=None):

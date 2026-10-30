@@ -34,7 +34,7 @@ nano ~/.config/rpi-console/config.json
 sudo reboot
 ```
 
-`install.sh` installs `cage`, Chromium, Kodi and Kodi's controller support, copies the launcher to `/opt/rpi-console`, drops the Jellyfin repository into Kodi, adds your user to the groups it needs, and enables the service. Logs go to `journalctl -u rpi-console -f`.
+`install.sh` installs `cage`, Chromium, Kodi and Kodi's controller support, copies the launcher to `/opt/rpi-console`, drops the Jellyfin repository into Kodi, adds your user to the groups it needs, and enables the service. The launcher's log is `journalctl -b -t python3 _UID=$(id -u) -f` (the `PAMName=` login session it needs for the screen moves it out of `journalctl -u rpi-console`), and whatever the last app printed is in `~/.local/state/rpi-console/last-app.log`.
 
 ## VPN
 
