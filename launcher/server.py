@@ -11,6 +11,7 @@ import os
 import queue
 import re
 import select
+import shlex
 import shutil
 import signal
 import socket
@@ -61,7 +62,9 @@ DEFAULTS = {
     # One-press commands in Settings → Terminal, as [label, command].
     'quick_commands': [
         ['Launcher log', 'journalctl -u rpi-console -b -n 80 --no-pager'],
-        ['Steam Link logs', "f=$(find ~/.local/share ~/.config -ipath '*steam*' \\( -name '*.log' -o -name '*.txt' \\) -mmin -240 2>/dev/null); "
+        ['Last app output', "journalctl -u rpi-console -b --no-pager -o cat | "
+                            "awk '/^[0-9:]+ starting /{b=\"\"} {b=b $0 \"\\n\"} END{printf \"%s\", b}' | tail -n 200"],
+        ['Steam Link logs', "f=$(find ~/.local/share ~/.config /tmp -ipath '*steam*' -iname '*log*' -type f -mmin -240 2>/dev/null | sort -u); "
                             "[ -n \"$f\" ] || echo 'No Steam Link logs from the last 4 hours'; "
                             "echo \"$f\" | while read -r l; do [ -n \"$l\" ] && { echo \"== $l\"; tail -n 40 \"$l\"; }; done"],
         ['Steam Link files', 'dpkg -l steamlink | tail -n 1; ls -la ~/.local/share/SteamLink 2>&1 | head -n 30'],
@@ -469,6 +472,7 @@ def run_fullscreen(cmd):
     """Run Kodi, Moonlight or Jellyfin until it exits or the Xbox button is held for GUIDE_HOLD
     seconds. Returns only after every process it started has ended, because anything left
     holds on to the screen and the launcher can't come back."""
+    log('starting', shlex.join(cmd))  # Settings → Terminal → Last app output starts reading here
     proc = subprocess.Popen(cmd, env=app_env())
     stop = threading.Event()
     with on_screen_lock:
@@ -484,7 +488,9 @@ def run_fullscreen(cmd):
     watcher = threading.Thread(target=watch_guide_hold, args=(stop, lambda: end_processes(seen(proc.pid))), daemon=True)
     watcher.start()
     try:
-        return proc.wait()
+        code = proc.wait()
+        log(Path(cmd[0]).name, 'exited with', code)
+        return code
     finally:
         stop.set()
         watcher.join()  # a hold may still be closing things

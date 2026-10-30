@@ -173,10 +173,21 @@ def test_quick_commands():
             logs.mkdir(parents=True)
             (logs / 'streaming log.txt').write_text('line 1\nline 2\n')
             (Path(home, '.local/share') / 'other.log').write_text('not steam\n')
+            (logs / 'sdr_config.txt').write_text('{"relays": []}\n')  # settings, not a log
             out = server.shell(find_logs)['output']
             assert out == f'== {logs}/streaming log.txt\nline 1\nline 2\n', out
         finally:
             os.environ['HOME'] = saved
+
+
+def test_last_app_output():
+    """Shows the journal from the last app start on, without journalctl itself."""
+    awk = dict(server.DEFAULTS['quick_commands'])['Last app output'].split(' | ', 1)[1]
+    journal = ('10:00:00 RPi Media Console v0.6\n10:01:00 starting kodi --standalone\nkodi says hi\n'
+               '10:02:00 kodi exited with 0\n10:03:00 starting /usr/bin/steamlink\nSDL: no joysticks\n'
+               '10:04:00 steamlink exited with 1\n')
+    out = subprocess.run(['bash', '-c', awk], input=journal, capture_output=True, text=True).stdout
+    assert out == '10:03:00 starting /usr/bin/steamlink\nSDL: no joysticks\n10:04:00 steamlink exited with 1\n', out
 
 
 def test_api_wants_local_host():
@@ -302,6 +313,7 @@ if __name__ == '__main__':
     test_parse_addresses()
     test_shell()
     test_quick_commands()
+    test_last_app_output()
     test_api_wants_local_host()
     test_stream_cmd()
     test_pc_awake()
