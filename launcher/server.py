@@ -76,6 +76,13 @@ DEFAULTS = {
                                   "grep -i multi ~/.config/Moonlight*/*.conf"],
         ['Sound', 'cat /proc/asound/cards; grep -H . /proc/asound/card*/pcm*p/sub*/status 2>/dev/null'],
         ['Network', 'ip -br addr; nmcli -t -f NAME,TYPE,DEVICE connection show --active'],
+        # Router ping = the Wi-Fi alone; PC ping = Wi-Fi + internet + VPN. Compare the two.
+        ['Connection', "nmcli -f IN-USE,SSID,CHAN,RATE,SIGNAL dev wifi list --rescan no | grep -E '^(IN-USE|\\*)'; "
+                       "echo; echo 'VPN:'; nmcli -g vpn.data connection show home-vpn 2>/dev/null | tr ',' '\\n' | "
+                       "grep -iE 'proto|comp' || echo 'proto-tcp not set, so UDP'; "
+                       "echo; echo 'Router (Wi-Fi only):'; ping -c 20 -i 0.2 -q $(ip route | awk '/^default via/ && !/tun/ {print $3; exit}') | tail -n 2; "
+                       "echo; echo 'Gaming PC (Wi-Fi + internet + VPN):'; "
+                       "ping -c 20 -i 0.2 -q $(python3 -c 'import json, os; print(json.load(open(os.path.expanduser(\"~/.config/rpi-console/config.json\")))[\"pc_host\"])') | tail -n 2"],
         ['Disk and memory', 'df -h /; free -h; uptime'],
     ],
 }
