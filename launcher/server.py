@@ -58,9 +58,23 @@ DEFAULTS = {
     'github_repo': 'forestlxrd/RPI-Media-Console',
     'github_token': '',
     'auto_update': True,
+    # One-press commands in Settings → Terminal, as [label, command].
+    'quick_commands': [
+        ['Launcher log', 'journalctl -u rpi-console -b -n 80 --no-pager'],
+        ['Steam Link logs', "f=$(find ~/.local/share ~/.config -ipath '*steam*' \\( -name '*.log' -o -name '*.txt' \\) -mmin -240 2>/dev/null); "
+                            "[ -n \"$f\" ] || echo 'No Steam Link logs from the last 4 hours'; "
+                            "echo \"$f\" | while read -r l; do [ -n \"$l\" ] && { echo \"== $l\"; tail -n 40 \"$l\"; }; done"],
+        ['Steam Link files', 'dpkg -l steamlink | tail -n 1; ls -la ~/.local/share/SteamLink 2>&1 | head -n 30'],
+        ['Controllers', "ls -l /dev/hidraw* /dev/input/by-id/ 2>&1; grep -E '^(N|H):' /proc/bus/input/devices"],
+        ['Moonlight controllers', "journalctl -u rpi-console -b --no-pager | grep -i gamepad | tail -n 40; "
+                                  "grep -i multi ~/.config/Moonlight*/*.conf"],
+        ['Sound', 'cat /proc/asound/cards; grep -H . /proc/asound/card*/pcm*p/sub*/status 2>/dev/null'],
+        ['Network', 'ip -br addr; nmcli -t -f NAME,TYPE,DEVICE connection show --active'],
+        ['Disk and memory', 'df -h /; free -h; uptime'],
+    ],
 }
 EDITABLE = {'movies_app': str, 'stream_app': str, 'moonlight_app': str, 'resolution': str, 'bitrate_kbps': int, 'auto_update': bool}
-PUBLIC = [*EDITABLE, 'moonlight_apps', 'pc_name']
+PUBLIC = [*EDITABLE, 'moonlight_apps', 'pc_name', 'quick_commands']
 
 
 def load_config():

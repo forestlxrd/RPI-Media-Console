@@ -383,6 +383,8 @@ function renderHistory() {
 
 async function loadTerminal() {
   renderHistory();
+  $('#term-quick').replaceChildren(...(state.settings?.quick_commands ?? []).map(([label, cmd]) =>
+    h('button', { className: 'btn', textContent: label, title: cmd, onclick: () => runCommand(cmd, label) })));
   const where = $('#term-where');
   try {
     const { host, addresses } = await api('addresses');
@@ -394,17 +396,19 @@ async function loadTerminal() {
 }
 
 let termBusy = false;
-async function runCommand(cmd) {
+async function runCommand(cmd, label) {
   cmd = cmd.trim();
   if (!cmd || termBusy) return;
   termBusy = true;
-  $('#term-cmd').value = cmd;
+  if (!label) $('#term-cmd').value = cmd;
   const out = $('#term-out');
   out.hidden = false;
   out.textContent = `$ ${cmd}\nRunning…`;
-  const list = [cmd, ...termHistory().filter((c) => c !== cmd)].slice(0, 20);
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* history is a nicety */ }
-  renderHistory();
+  if (!label) {  // the quick commands have their own buttons
+    const list = [cmd, ...termHistory().filter((c) => c !== cmd)].slice(0, 20);
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* history is a nicety */ }
+    renderHistory();
+  }
   try {
     const r = await api('shell', { cmd });
     const text = r.output && !r.output.endsWith('\n') ? `${r.output}\n` : r.output;

@@ -61,8 +61,9 @@ The launcher keeps the VPN up whenever home isn't reachable directly: within a m
 | `vpn_connection` | `home-vpn` | NetworkManager profile the launcher brings up away from home. |
 | `github_repo` | `forestlxrd/RPI-Media-Console` | Where updates come from. |
 | `github_token` | | Only needed if the repo goes private. |
+| `quick_commands` | launcher log, Steam Link logs, controllers, … | One-press buttons in Settings → Terminal, as `[label, command]` pairs. Setting it replaces the whole list. |
 
-Settings → Terminal shows the Pi's addresses for SSH (on its Wi-Fi, cable and VPN) and runs shell commands from the controller: press A on the command field for the on-screen keyboard, and Menu runs it. Each command gets 30 seconds and can't be typed into, so use it for quick checks rather than editors or prompts. That includes `sudo` when it asks for a password; `journalctl` works without it for users in the `adm` group, which Raspberry Pi OS's first user is. Up and down scroll the output.
+Settings → Terminal shows the Pi's addresses for SSH (on its Wi-Fi, cable and VPN) and runs shell commands from the controller: press A on the command field for the on-screen keyboard, and Menu runs it. Each command gets 30 seconds and can't be typed into, so use it for quick checks rather than editors or prompts. That includes `sudo` when it asks for a password; `journalctl` works without it for users in the `adm` group, which Raspberry Pi OS's first user is. Up and down scroll the output. The buttons under the command field run common checks in one press: the launcher's log, Steam Link's logs, controllers, sound, network, disk.
 
 Settings → Playback changes `movies_app`, `stream_app` (`moonlight` or `steamlink`), `moonlight_app`, `resolution` and `bitrate_kbps` from the couch.
 

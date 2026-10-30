@@ -159,6 +159,26 @@ def test_shell():
     assert time.monotonic() - started < 5
 
 
+def test_quick_commands():
+    for label, cmd in server.DEFAULTS['quick_commands']:
+        check = subprocess.run(['bash', '-n', '-c', cmd], capture_output=True, text=True)
+        assert check.returncode == 0, (label, check.stderr)
+    find_logs = dict(server.DEFAULTS['quick_commands'])['Steam Link logs']
+    with tempfile.TemporaryDirectory() as home:
+        saved = os.environ['HOME']
+        os.environ['HOME'] = home
+        try:
+            assert server.shell(find_logs)['output'] == 'No Steam Link logs from the last 4 hours\n'
+            logs = Path(home, '.local/share/Valve Corporation/SteamLink')
+            logs.mkdir(parents=True)
+            (logs / 'streaming log.txt').write_text('line 1\nline 2\n')
+            (Path(home, '.local/share') / 'other.log').write_text('not steam\n')
+            out = server.shell(find_logs)['output']
+            assert out == f'== {logs}/streaming log.txt\nline 1\nline 2\n', out
+        finally:
+            os.environ['HOME'] = saved
+
+
 def test_api_wants_local_host():
     """Pages elsewhere can't use the API, even one whose name points at 127.0.0.1."""
     import http.client
@@ -281,6 +301,7 @@ if __name__ == '__main__':
     test_run_fullscreen_leaves_nothing()
     test_parse_addresses()
     test_shell()
+    test_quick_commands()
     test_api_wants_local_host()
     test_stream_cmd()
     test_pc_awake()
