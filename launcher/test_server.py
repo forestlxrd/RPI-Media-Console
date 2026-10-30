@@ -310,6 +310,18 @@ def test_steamlink_in_cage():
         assert run({k: v for k, v in os.environ.items() if k != 'DISPLAY'}).startswith('Xwayland display: none\n')
 
 
+def test_no_password_bubble():
+    with tempfile.TemporaryDirectory() as d:
+        server.no_password_bubble(d)  # a fresh profile
+        prefs = Path(d, 'Default/Preferences')
+        data = json.loads(prefs.read_text())
+        assert data == {'credentials_enable_service': False, 'profile': {'password_manager_enabled': False}}
+        prefs.write_text(json.dumps({'profile': {'name': 'Kiosk', 'password_manager_enabled': True}, 'x': 1}))
+        server.no_password_bubble(d)  # keeps what Chromium stored
+        data = json.loads(prefs.read_text())
+        assert data['x'] == 1 and data['profile'] == {'name': 'Kiosk', 'password_manager_enabled': False}
+
+
 def test_pc_awake():
     """Moonlight needs Sunshine; for Steam Link, Steam answering is enough."""
     saved, port_open = dict(server.cfg), server.port_open
@@ -339,6 +351,7 @@ if __name__ == '__main__':
     test_api_wants_local_host()
     test_stream_cmd()
     test_pc_awake()
+    test_no_password_bubble()
     test_steamlink_in_cage()
     test_install_steamlink()
     test_sudo_password_on_stdin()

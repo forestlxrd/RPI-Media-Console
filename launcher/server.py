@@ -77,12 +77,16 @@ DEFAULTS = {
         ['Sound', 'cat /proc/asound/cards; grep -H . /proc/asound/card*/pcm*p/sub*/status 2>/dev/null'],
         ['Network', 'ip -br addr; nmcli -t -f NAME,TYPE,DEVICE connection show --active'],
         # Router ping = the Wi-Fi alone; PC ping = Wi-Fi + internet + VPN. Compare the two.
+        # Router ping = the Wi-Fi alone; Home Assistant ping = Wi-Fi + internet + VPN. Windows drops
+        # pings by default, so the gaming PC itself can't be measured this way.
         ['Connection', "nmcli -f IN-USE,SSID,CHAN,RATE,SIGNAL dev wifi list --rescan no | grep -E '^(IN-USE|\\*)'; "
                        "echo; echo 'VPN:'; nmcli -g vpn.data connection show home-vpn 2>/dev/null | tr ',' '\\n' | "
                        "grep -iE 'proto|comp' || echo 'proto-tcp not set, so UDP'; "
                        "echo; echo 'Router (Wi-Fi only):'; ping -c 20 -i 0.2 -q $(ip route | awk '/^default via/ && !/tun/ {print $3; exit}') | tail -n 2; "
-                       "echo; echo 'Gaming PC (Wi-Fi + internet + VPN):'; "
-                       "ping -c 20 -i 0.2 -q $(python3 -c 'import json, os; print(json.load(open(os.path.expanduser(\"~/.config/rpi-console/config.json\")))[\"pc_host\"])') | tail -n 2"],
+                       "echo; echo 'Home Assistant (Wi-Fi + internet + VPN):'; "
+                       "ping -c 20 -i 0.2 -q $(python3 -c 'import json, os, urllib.parse; "
+                       "c = json.load(open(os.path.expanduser(\"~/.config/rpi-console/config.json\"))); "
+                       "print(urllib.parse.urlsplit(c.get(\"ha_url\", \"http://homeassistant.lan:8123\")).hostname)') | tail -n 2"],
         ['Disk and memory', 'df -h /; free -h; uptime'],
     ],
 }
@@ -309,9 +313,29 @@ class Display:
             self.kiosk.wait()
 
 
+def no_password_bubble(profile_dir):
+    """Turn off Chromium's "Save password?" bubble, which a controller can't dismiss. It showed up
+    after the Pi password dialog. Chromium reads Preferences at start, so this runs before each launch."""
+    prefs = Path(profile_dir) / 'Default/Preferences'
+    try:
+        data = json.loads(prefs.read_text())
+    except (OSError, ValueError):
+        data = {}
+    if data.get('credentials_enable_service') is False and data.get('profile', {}).get('password_manager_enabled') is False:
+        return
+    data['credentials_enable_service'] = False
+    data.setdefault('profile', {})['password_manager_enabled'] = False
+    try:
+        prefs.parent.mkdir(parents=True, exist_ok=True)
+        prefs.write_text(json.dumps(data))
+    except OSError as e:
+        log("couldn't turn off Chromium's password bubble:", e)
+
+
 def browser_cmd(url, profile, *extra):
     """Chromium full screen in cage, the launcher's way of showing one web page on the TV."""
     browser = shutil.which('chromium') or shutil.which('chromium-browser')
+    no_password_bubble(Path.home() / '.local/share/rpi-console' / profile)
     return [
         'cage', '-d', '--', browser, url,
         '--kiosk', '--no-first-run', '--noerrdialogs', '--disable-infobars',
