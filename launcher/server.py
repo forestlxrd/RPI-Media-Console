@@ -571,8 +571,11 @@ def pc_awake(host):
 
 # Runs inside cage. Steam Link's own Qt 5.14 has no Wayland plugin, so it runs on X11 through
 # cage's Xwayland, as on the Pi OS desktop. The DISPLAY line in last-app.log shows cage started it.
+# It found the controller but ignored every press: SDL drops controller events while it thinks
+# its window lacks focus, and read the pad through its own HIDAPI driver rather than the evdev
+# device Moonlight and the launcher use.
 STEAMLINK_IN_CAGE = '''echo "Xwayland display: ${DISPLAY:-none}"
-QT_QPA_PLATFORM=xcb exec "$1"'''
+QT_QPA_PLATFORM=xcb SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1 SDL_JOYSTICK_HIDAPI=0 exec "$1"'''
 STEAMLINK_PACKAGES = ['steamlink', 'xwayland']
 
 steamlink_installing = threading.Lock()

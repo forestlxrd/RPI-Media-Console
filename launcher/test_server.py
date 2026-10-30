@@ -302,11 +302,11 @@ def test_steamlink_in_cage():
     """The script cage runs notes the Xwayland display, then starts Steam Link on X11."""
     with tempfile.TemporaryDirectory() as d:
         fake = Path(d, 'steamlink')
-        fake.write_text('#!/bin/sh\necho "platform=$QT_QPA_PLATFORM"\n')
+        fake.write_text('#!/bin/sh\necho "platform=$QT_QPA_PLATFORM background=$SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS hidapi=$SDL_JOYSTICK_HIDAPI"\n')
         fake.chmod(0o755)
         run = lambda env: subprocess.run(['sh', '-c', server.STEAMLINK_IN_CAGE, 'sh', str(fake)], env=env,
                                          capture_output=True, text=True).stdout
-        assert run({**os.environ, 'DISPLAY': ':0'}) == 'Xwayland display: :0\nplatform=xcb\n'
+        assert run({**os.environ, 'DISPLAY': ':0'}) == 'Xwayland display: :0\nplatform=xcb background=1 hidapi=0\n'
         assert run({k: v for k, v in os.environ.items() if k != 'DISPLAY'}).startswith('Xwayland display: none\n')
 
 
