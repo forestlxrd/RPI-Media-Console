@@ -225,7 +225,7 @@ def test_stream_cmd():
         server.cfg['stream_app'] = 'steamlink'
         assert server.stream_cmd() == ['/usr/bin/steamlink']  # no cage: straight on the screen
         server.shutil.which = lambda name: f'/usr/bin/{name}' if name in ('cage', 'steamlink') else None
-        assert server.stream_cmd() == ['cage', '-d', '--', '/usr/bin/steamlink']
+        assert server.stream_cmd() == ['cage', '-d', '--', 'sh', '-c', server.STEAMLINK_IN_CAGE, 'sh', '/usr/bin/steamlink']
         server.shutil.which = lambda name: None
         for app in ('steamlink', 'moonlight'):
             server.cfg['stream_app'] = app
@@ -292,6 +292,20 @@ def test_sudo_password_on_stdin():
             os.environ['PATH'] = path
 
 
+def test_steamlink_in_cage():
+    """The script cage runs lists Steam Link's Qt plugins, then starts it on Wayland."""
+    with tempfile.TemporaryDirectory() as home:
+        plugins = Path(home, '.local/share/SteamLink/lib/qt/plugins/platforms')
+        plugins.mkdir(parents=True)
+        (plugins / 'libqwayland-egl.so').write_text('')
+        fake = Path(home, 'steamlink')
+        fake.write_text('#!/bin/sh\necho "platform=$QT_QPA_PLATFORM"\n')
+        fake.chmod(0o755)
+        out = subprocess.run(['sh', '-c', server.STEAMLINK_IN_CAGE, 'sh', str(fake)], env={**os.environ, 'HOME': home},
+                             capture_output=True, text=True).stdout
+        assert out == f'Qt platform plugins in Steam Link:\n{plugins}/libqwayland-egl.so\nplatform=wayland;xcb\n', out
+
+
 def test_pc_awake():
     """Moonlight needs Sunshine; for Steam Link, Steam answering is enough."""
     saved, port_open = dict(server.cfg), server.port_open
@@ -321,6 +335,7 @@ if __name__ == '__main__':
     test_api_wants_local_host()
     test_stream_cmd()
     test_pc_awake()
+    test_steamlink_in_cage()
     test_install_steamlink()
     test_sudo_password_on_stdin()
     print('ok')

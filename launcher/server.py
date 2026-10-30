@@ -569,6 +569,12 @@ def pc_awake(host):
     return any(port_open(host, port) for port in ports)
 
 
+# Runs inside cage. Lists the Qt platform plugins Steam Link ships (to last-app.log), then starts
+# it on Wayland, or on X11 through cage's Xwayland if its Qt has no Wayland plugin.
+STEAMLINK_IN_CAGE = '''echo "Qt platform plugins in Steam Link:"
+find ~/.local/share/SteamLink -path '*/platforms/*' -name '*.so' 2>/dev/null
+QT_QPA_PLATFORM='wayland;xcb' QT_WAYLAND_DISABLE_WINDOWDECORATION=1 exec "$1"'''
+
 steamlink_installing = threading.Lock()
 
 
@@ -627,10 +633,11 @@ def stream_cmd():
         if not steamlink:
             raise Oops('Steam Link is not installed yet')
         # Its menus are Qt. Straight on the screen they either fall back to a backend without
-        # OpenGL that never redraws, or (eglfs) fail every page flip. In cage, Qt gets a Wayland
-        # display like on the Pi OS desktop, which Steam Link supports.
-        cage = shutil.which('cage')
-        return ['cage', '-d', '--', steamlink] if cage else [steamlink]
+        # OpenGL that never redraws, or (eglfs) fail every page flip. In cage it has a Wayland
+        # display, as on the Pi OS desktop, but has to be told to use it.
+        if not shutil.which('cage'):
+            return [steamlink]
+        return ['cage', '-d', '--', 'sh', '-c', STEAMLINK_IN_CAGE, 'sh', steamlink]
     moonlight = shutil.which('moonlight-qt') or shutil.which('moonlight')  # Pi OS names it moonlight-qt
     if not moonlight:
         raise Oops('Moonlight is not installed')
