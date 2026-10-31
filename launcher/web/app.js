@@ -295,6 +295,7 @@ const STREAM_OPTIONS = {
   moonlight_app: { label: 'Games start in', values: () => state.settings.moonlight_apps, show: (v) => v, moonlight: true },
   resolution: { label: 'Game picture', values: () => ['1280x720', '1920x1080'], show: (v) => ({ '1280x720': '720p', '1920x1080': '1080p' })[v] ?? v, moonlight: true },
   bitrate_kbps: { label: 'Game bitrate (lower it if games stutter)', values: () => [8000, 10000, 15000, 20000, 30000], show: (v) => `${v / 1000} Mbps`, moonlight: true },
+  vibration: { label: 'Controller vibration', values: () => ['on', 'gentle', 'off'], show: (v) => ({ on: 'On', gentle: 'Gentle', off: 'Off' })[v] ?? v },
 };
 
 function renderStreaming() {
@@ -314,12 +315,29 @@ function renderStreaming() {
 async function cycle(key) {
   const values = STREAM_OPTIONS[key].values();
   const next = values[(values.indexOf(state.settings[key]) + 1) % values.length];
+  if (key === 'vibration') return setVibration(next);
   try {
     await api('settings', { [key]: next });
     state.settings[key] = next;
     renderStreaming();
   } catch (e) { return fail(e); }
   if (key === 'stream_app' && next === 'steamlink') installSteamLink();
+}
+
+// Vibration is a root-only xpadneo setting, so sudo may want the Pi password, as for Steam Link.
+async function setVibration(level, password) {
+  try {
+    await api('vibration', password == null ? { level } : { level, password });
+    state.settings.vibration = level;
+    renderStreaming();
+  } catch (e) {
+    if (!e.needs_password) return fail(e);
+    const again = await askText('Pi password', {
+      body: password == null ? 'Changing the controller vibration needs the password you log in to the Pi with.' : 'That password did not work. Try again.',
+      ok: 'Change', type: 'password',
+    });
+    if (again != null) setVibration(level, again);
+  }
 }
 
 // Installs Steam Link if it's missing. apt runs through sudo, which may want the Pi password;

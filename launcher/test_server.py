@@ -322,6 +322,52 @@ def test_no_password_bubble():
         assert data['x'] == 1 and data['profile'] == {'name': 'Kiosk', 'password_manager_enabled': False}
 
 
+def test_set_vibration():
+    saved = server.sudo, server.store_settings
+    calls, stored = [], []
+
+    def fake_sudo(*cmd, password=None, timeout=20):
+        if password != 'right':
+            return 1, '', 'sudo: a password is required'
+        calls.append(cmd)
+        return 0, '', ''
+    try:
+        server.sudo, server.store_settings = fake_sudo, stored.append
+        for password in (None, 'wrong'):
+            try:
+                server.set_vibration('gentle', password)
+                raise AssertionError('changed it without a working password')
+            except server.Oops as e:
+                assert e.extra == {'needs_password': True}
+        try:
+            server.set_vibration('loud', 'right')
+            raise AssertionError('took an unknown level')
+        except server.Oops as e:
+            assert not e.extra
+        server.set_vibration('gentle', 'right')
+        assert stored == [{'vibration': 'gentle'}]
+    finally:
+        server.sudo, server.store_settings = saved
+
+
+def test_vibration_script():
+    """Sets the parameter when xpadneo is loaded, skips it when not, and always writes the config."""
+    with tempfile.TemporaryDirectory() as d:
+        param, conf = Path(d, 'rumble_attenuation'), Path(d, 'xpadneo.conf')
+        saved = server.XPADNEO_PARAM, server.XPADNEO_CONF, server.sudo, server.store_settings
+        try:
+            server.XPADNEO_PARAM, server.XPADNEO_CONF = str(param), str(conf)
+            server.sudo = lambda *cmd, password=None, timeout=20: (0, '', '') if cmd == ('true',) else server.run(*cmd)
+            server.store_settings = lambda changes: None
+            server.set_vibration('off')  # no controller connected, so xpadneo isn't loaded
+            assert not param.exists() and conf.read_text() == 'options hid_xpadneo disable_shift_mode=1 rumble_attenuation=100\n'
+            param.write_text('0\n')
+            server.set_vibration('gentle')
+            assert param.read_text() == '60\n' and 'rumble_attenuation=60' in conf.read_text()
+        finally:
+            server.XPADNEO_PARAM, server.XPADNEO_CONF, server.sudo, server.store_settings = saved
+
+
 def test_pc_awake():
     """Moonlight needs Sunshine; for Steam Link, Steam answering is enough."""
     saved, port_open = dict(server.cfg), server.port_open
@@ -351,6 +397,8 @@ if __name__ == '__main__':
     test_api_wants_local_host()
     test_stream_cmd()
     test_pc_awake()
+    test_set_vibration()
+    test_vibration_script()
     test_no_password_bubble()
     test_steamlink_in_cage()
     test_install_steamlink()

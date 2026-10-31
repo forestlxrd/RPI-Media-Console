@@ -65,6 +65,8 @@ The launcher keeps the VPN up whenever home isn't reachable directly: within a m
 
 Settings → Terminal shows the Pi's addresses for SSH (on its Wi-Fi, cable and VPN) and runs shell commands from the controller: press A on the command field for the on-screen keyboard, and Menu runs it. Each command gets 30 seconds and can't be typed into, so use it for quick checks rather than editors or prompts. That includes `sudo` when it asks for a password; `journalctl` works without it for users in the `adm` group, which Raspberry Pi OS's first user is. Up and down scroll the output. The buttons under the command field run common checks in one press: the launcher's log, everything the last app (Kodi, Moonlight, Steam Link, Jellyfin) printed, Steam Link's logs, controllers, sound, network, disk.
 
+Settings → Playback also has **Controller vibration** (On / Gentle / Off). It sets xpadneo's `rumble_attenuation` (0, 60 or 100 percent) right away and in `/etc/modprobe.d/rpi-console-xpadneo.conf`, so it asks for the Pi password the first time. Turn it down if the controllers buzz on their own during streams.
+
 Settings → Playback changes `movies_app`, `stream_app` (`moonlight` or `steamlink`), `moonlight_app`, `resolution` and `bitrate_kbps` from the couch.
 
 ## Updates

@@ -54,6 +54,7 @@ DEFAULTS = {
     'moonlight_apps': ['Steam Big Picture', 'Desktop'],
     'resolution': '1920x1080',
     'bitrate_kbps': 15000,
+    'vibration': 'on',  # 'on', 'gentle' or 'off'; Settings → Playback, applied through xpadneo
     'movies_app': 'jellyfin',  # 'jellyfin' (its own TV app, in the browser) or 'kodi'
     'jellyfin_url': 'http://jelly.lan',
     'kodi_cmd': ['kodi', '--standalone'],
@@ -91,7 +92,7 @@ DEFAULTS = {
     ],
 }
 EDITABLE = {'movies_app': str, 'stream_app': str, 'moonlight_app': str, 'resolution': str, 'bitrate_kbps': int, 'auto_update': bool}
-PUBLIC = [*EDITABLE, 'moonlight_apps', 'pc_name', 'quick_commands']
+PUBLIC = [*EDITABLE, 'vibration', 'moonlight_apps', 'pc_name', 'quick_commands']
 
 
 def load_config():
@@ -1131,12 +1132,39 @@ def update_settings(changes):
             changes[key] = EDITABLE[key](value)
         except (TypeError, ValueError):
             raise Oops(f'Bad value for {key}') from None
+    store_settings(changes)
+
+
+def store_settings(changes):
     cfg.update(changes)
     stored = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
     tmp = CONFIG.with_suffix('.tmp')
     tmp.write_text(json.dumps({**stored, **changes}, indent=2) + '\n')
     tmp.replace(CONFIG)
+
+
+# Percent xpadneo takes off every rumble. Since Moonlight drives the pads through evdev, they
+# sometimes buzz at full strength for 5-10 seconds with no game asking; this tames or silences that.
+VIBRATION = {'on': 0, 'gentle': 60, 'off': 100}
+XPADNEO_PARAM = '/sys/module/hid_xpadneo/parameters/rumble_attenuation'
+XPADNEO_CONF = '/etc/modprobe.d/rpi-console-xpadneo.conf'  # install.sh made it, for disable_shift_mode
+
+
+def set_vibration(level, password=None):
+    """Change it now (if xpadneo is loaded) and for every boot after. Root only, so through sudo."""
+    if level not in VIBRATION:
+        raise Oops(f'Unknown vibration setting {level!r}')
+    if sudo('true', password=password)[0]:
+        raise Oops('That password did not work' if password else 'Changing the vibration needs the Pi password',
+                   needs_password=True)
+    cut = VIBRATION[level]
+    script = (f'if [ -e {XPADNEO_PARAM} ]; then echo {cut} > {XPADNEO_PARAM}; fi && '
+              f"echo 'options hid_xpadneo disable_shift_mode=1 rumble_attenuation={cut}' > {XPADNEO_CONF}")
+    code, _, err = sudo('sh', '-c', script, password=password)
+    if code:
+        raise Oops(f"Couldn't change the vibration: {(err.strip().splitlines() or ['no reason given'])[-1]}")
+    store_settings({'vibration': level})
 
 
 def power(action):
@@ -1163,6 +1191,7 @@ ROUTES = {
     ('POST', '/api/restart'): lambda b: display.jobs.put(restart_self),
     ('POST', '/api/power'): lambda b: power(b.get('action')),
     ('GET', '/api/addresses'): lambda b: addresses(),
+    ('POST', '/api/vibration'): lambda b: set_vibration(b.get('level'), b.get('password')),
     ('POST', '/api/shell'): lambda b: shell(b.get('cmd')),
     ('POST', '/api/steamlink/install'): lambda b: {'ready': ensure_steamlink(b.get('password'))},
 }
