@@ -73,6 +73,8 @@ DEFAULTS = {
                             "echo \"$f\" | while read -r l; do [ -n \"$l\" ] && { echo \"== $l\"; tail -n 40 \"$l\"; }; done"],
         ['Steam Link files', 'dpkg -l steamlink | tail -n 1; ls -la ~/.local/share/SteamLink 2>&1 | head -n 30'],
         ['Controllers', "ls -l /dev/hidraw* /dev/input/by-id/ 2>&1; grep -E '^(N|H):' /proc/bus/input/devices"],
+        # Each Bluetooth (re)connect of a pad shows up in the kernel log, with its time.
+        ['Controller drops', "journalctl -k -b --no-pager -o short | grep -iE 'xpadneo|input: Xbox|bluetooth: hci0' | tail -n 30"],
         ['Moonlight controllers', "grep -i gamepad ~/.local/state/rpi-console/last-app.log | tail -n 40; "
                                   "grep -i multi ~/.config/Moonlight*/*.conf"],
         ['Sound', 'cat /proc/asound/cards; grep -H . /proc/asound/card*/pcm*p/sub*/status 2>/dev/null'],
